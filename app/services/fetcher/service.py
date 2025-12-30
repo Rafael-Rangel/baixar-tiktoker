@@ -18,7 +18,13 @@ class FetcherService:
     def _construct_url(self, platform: str, external_id: str) -> Optional[str]:
         """Constrói URL baseado na plataforma"""
         if platform == "youtube":
-            return f"https://www.youtube.com/channel/{external_id}/videos"
+            # Suporta tanto channel ID (UC_xxx) quanto handle (@nome)
+            if external_id.startswith('@'):
+                # Handle do YouTube: @nome (ex: @ShortsPodcuts)
+                return f"https://www.youtube.com/{external_id}/videos"
+            else:
+                # Channel ID: UC_xxx
+                return f"https://www.youtube.com/channel/{external_id}/videos"
         elif platform == "instagram":
             return f"https://www.instagram.com/{external_id}/"
         elif platform == "tiktok":
