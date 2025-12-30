@@ -44,18 +44,19 @@ class DownloaderService:
         cookies_path = os.path.abspath(cookies_path)
         
         # Determinar qual cliente usar baseado na disponibilidade de cookies
-        # Estratégia: sempre tentar android primeiro (funciona melhor)
-        # Se android falhar, tentar outros clientes
+        # Na VPS, o YouTube bloqueia android sem cookies mais agressivamente
+        # Estratégia: se tiver cookies, usar apenas clientes que suportam cookies
         has_cookies = os.path.exists(cookies_path)
         
         if has_cookies:
-            # Com cookies disponíveis, tentar android primeiro (mais confiável)
-            # Se android falhar, tentar mweb e web que suportam cookies
-            # Nota: android não usa cookies mas funciona melhor na maioria dos casos
-            player_clients = ['android', 'mweb', 'web']
+            # Com cookies, tentar clientes que suportam cookies
+            # tv_embedded funciona bem com cookies e não precisa de JS runtime
+            # web_embedded também funciona melhor que web normal
+            player_clients = ['tv_embedded', 'web_embedded', 'mweb', 'web']
         else:
-            # Sem cookies, tentar android primeiro (menos bloqueios), depois web
-            player_clients = ['android', 'web']
+            # Sem cookies, tentar android primeiro (funciona localmente)
+            # Se falhar na VPS, tentar outros
+            player_clients = ['android', 'tv', 'web']
         
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
