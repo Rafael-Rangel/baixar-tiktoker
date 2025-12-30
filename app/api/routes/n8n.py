@@ -19,6 +19,7 @@ class SourceData(BaseModel):
 class ProcessRequest(BaseModel):
     """Request para processar fontes"""
     sources: List[SourceData]
+    limit: Optional[int] = None  # Limite de vídeos por fonte (opcional)
 
 @router.post("/process-sources")
 async def process_sources(
@@ -37,7 +38,8 @@ async def process_sources(
             videos = await fetcher.fetch_from_source_data(
                 platform=source_data.platform,
                 external_id=source_data.external_id,
-                group_name=source_data.group_name
+                group_name=source_data.group_name,
+                limit=request.limit
             )
             results.extend(videos)
         except Exception as e:

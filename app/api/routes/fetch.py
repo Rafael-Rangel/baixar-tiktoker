@@ -12,6 +12,7 @@ class SourceRequest(BaseModel):
     platform: str
     external_id: str
     group_name: Optional[str] = None
+    limit: Optional[int] = None  # Limite de vídeos (opcional)
 
 @router.post("/run")
 async def run_fetch(request: SourceRequest):
@@ -23,7 +24,8 @@ async def run_fetch(request: SourceRequest):
     videos = await fetcher.fetch_from_source_data(
         platform=request.platform,
         external_id=request.external_id,
-        group_name=request.group_name
+        group_name=request.group_name,
+        limit=request.limit
     )
     
     return {

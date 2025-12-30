@@ -29,13 +29,14 @@ class FetcherService:
         self,
         platform: str,
         external_id: str,
-        group_name: Optional[str] = None
+        group_name: Optional[str] = None,
+        limit: Optional[int] = None
     ) -> List[Dict]:
         """
         Busca vídeos de uma fonte específica
         Retorna lista de vídeos encontrados
         """
-        logger.info(f"Fetching from {platform}: {external_id}")
+        logger.info(f"Fetching from {platform}: {external_id} (limit: {limit})")
         
         url = self._construct_url(platform, external_id)
         if not url:
@@ -47,18 +48,26 @@ class FetcherService:
             'extract_flat': True,
             'force_generic_extractor': False,
         }
+        
+        # Limitar quantidade de vídeos se fornecido
+        if limit and limit > 0:
+            ydl_opts['playlistend'] = limit
 
         videos = []
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 
-                if 'entries' in info:
-                    entries = info['entries']
-                else:
-                    entries = [info]
+            if 'entries' in info:
+                entries = info['entries']
+            else:
+                entries = [info]
 
-                for entry in entries:
+            # Limitar resultados se ainda não foi limitado pelo yt-dlp
+            if limit and limit > 0 and len(entries) > limit:
+                entries = entries[:limit]
+
+            for entry in entries:
                     if not entry:
                         continue
                     
