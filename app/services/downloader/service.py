@@ -44,15 +44,18 @@ class DownloaderService:
         cookies_path = os.path.abspath(cookies_path)
         
         # Determinar qual cliente usar baseado na disponibilidade de cookies
-        # Na VPS, o YouTube bloqueia android sem cookies mais agressivamente
-        # Estratégia: se tiver cookies, usar apenas clientes que suportam cookies
+        # Problema: clientes que suportam cookies precisam de JS runtime
+        # Solução: tentar android primeiro mesmo com cookies (ignora cookies)
+        # Se android falhar, tentar outros clientes
         has_cookies = os.path.exists(cookies_path)
         
+        # Estratégia: sempre tentar android primeiro (mais confiável)
+        # Se android falhar (bloqueado), tentar clientes que suportam cookies
+        # Nota: android ignora cookies mas funciona melhor na maioria dos casos
         if has_cookies:
-            # Com cookies, tentar clientes que suportam cookies
-            # tv_embedded funciona bem com cookies e não precisa de JS runtime
-            # web_embedded também funciona melhor que web normal
-            player_clients = ['tv_embedded', 'web_embedded', 'mweb', 'web']
+            # Com cookies disponíveis, tentar android primeiro (ignora cookies mas funciona)
+            # Se android falhar, tentar clientes que suportam cookies
+            player_clients = ['android', 'tv', 'tv_embedded', 'web_embedded']
         else:
             # Sem cookies, tentar android primeiro (funciona localmente)
             # Se falhar na VPS, tentar outros
