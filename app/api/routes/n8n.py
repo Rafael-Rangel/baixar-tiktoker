@@ -15,6 +15,7 @@ class SourceData(BaseModel):
     platform: str  # youtube, instagram, tiktok
     external_id: str  # ID do canal/perfil
     group_name: Optional[str] = None
+    video_type: Optional[str] = "videos"  # "videos" ou "shorts" para YouTube
 
 class ProcessRequest(BaseModel):
     """Request para processar fontes"""
@@ -39,7 +40,8 @@ async def process_sources(
                 platform=source_data.platform,
                 external_id=source_data.external_id,
                 group_name=source_data.group_name,
-                limit=request.limit
+                limit=request.limit,
+                video_type=source_data.video_type or "videos"
             )
             results.extend(videos)
         except Exception as e:

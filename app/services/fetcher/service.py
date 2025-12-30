@@ -15,15 +15,20 @@ class FetcherService:
         """Serviço stateless - não precisa de sessão de banco"""
         pass
 
-    def _construct_url(self, platform: str, external_id: str) -> Optional[str]:
-        """Constrói URL baseado na plataforma"""
+    def _construct_url(self, platform: str, external_id: str, video_type: str = "videos") -> Optional[str]:
+        """
+        Constrói URL baseado na plataforma
+        video_type: "videos" (padrão) ou "shorts" para YouTube
+        """
         if platform == "youtube":
             # Suporta tanto channel ID (UC_xxx) quanto handle (@nome)
             if external_id.startswith('@'):
                 # Handle do YouTube: @nome (ex: @ShortsPodcuts)
-                return f"https://www.youtube.com/{external_id}/videos"
+                return f"https://www.youtube.com/{external_id}/{video_type}"
             else:
                 # Channel ID: UC_xxx
+                if video_type == "shorts":
+                    return f"https://www.youtube.com/channel/{external_id}/shorts"
                 return f"https://www.youtube.com/channel/{external_id}/videos"
         elif platform == "instagram":
             return f"https://www.instagram.com/{external_id}/"
@@ -36,15 +41,16 @@ class FetcherService:
         platform: str,
         external_id: str,
         group_name: Optional[str] = None,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        video_type: str = "videos"
     ) -> List[Dict]:
         """
         Busca vídeos de uma fonte específica
         Retorna lista de vídeos encontrados
         """
-        logger.info(f"Fetching from {platform}: {external_id} (limit: {limit})")
+        logger.info(f"Fetching from {platform}: {external_id} (limit: {limit}, type: {video_type})")
         
-        url = self._construct_url(platform, external_id)
+        url = self._construct_url(platform, external_id, video_type)
         if not url:
             logger.warning(f"Could not construct URL for {platform}: {external_id}")
             return []
