@@ -41,10 +41,15 @@ class DownloaderService:
         filename = emoji_pattern.sub('', filename)
         
         # Mapear caracteres especiais comuns
+        # Fazer ANTES da normalização para garantir conversão
         char_map = {
-            'ª': 'a', 'º': 'o', '°': 'o',  # Ordinais
-            'ç': 'c', 'Ç': 'c',
-            'ñ': 'n', 'Ñ': 'n',
+            '\u00AA': 'a',  # ª (ordinal feminino)
+            '\u00BA': 'o',  # º (ordinal masculino)
+            '\u00B0': 'o',  # ° (grau)
+            '\u00E7': 'c',  # ç
+            '\u00C7': 'c',  # Ç
+            '\u00F1': 'n',  # ñ
+            '\u00D1': 'n',  # Ñ
         }
         for old, new in char_map.items():
             filename = filename.replace(old, new)
@@ -53,12 +58,16 @@ class DownloaderService:
         # Isso separa acentos dos caracteres
         filename = unicodedata.normalize('NFD', filename)
         
-        # Remover acentos e caracteres especiais (tudo que não é ASCII básico)
-        # Mantém apenas letras, números e alguns caracteres básicos
+        # Remover acentos (diacríticos) - categoria 'Mn' = Mark, Nonspacing
         filename = ''.join(
             char for char in filename 
             if unicodedata.category(char) != 'Mn'  # Remove acentos
-            and (char.isalnum() or char in ' _-')  # Mantém letras, números, espaços, hífens e underscores
+        )
+        
+        # Agora manter apenas letras ASCII, números e alguns caracteres básicos
+        filename = ''.join(
+            char for char in filename 
+            if (char.isascii() and char.isalnum()) or char in ' _-.'  # Mantém apenas ASCII alfanumérico
         )
         
         # Converter para minúsculas
