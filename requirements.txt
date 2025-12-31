@@ -4,7 +4,6 @@ python-dotenv
 pydantic>=2.0
 pydantic-settings
 httpx
-yt-dlp[js]
-pytubefix>=6.0.0
+playwright>=1.40.0
 tenacity
 requests
