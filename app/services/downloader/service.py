@@ -264,6 +264,8 @@ class DownloaderService:
         output_path_abs = os.path.abspath(output_path)
         logger.info("Download output_path (absolute): %s", output_path_abs)
 
+        errors_collected = []
+        
         def try_download(url: str) -> Optional[dict]:
             self._clean_partial_files(output_path_abs)
             # 1) YouTube: formato 18, opts mínimos (igual CLI: sem cookies, sem extractor_args)
@@ -277,9 +279,13 @@ class DownloaderService:
                     if ok:
                         logger.info("Format 18: file found, size %s", os.path.getsize(output_path_abs))
                         return ok
-                    logger.warning("Format 18: file not found or size <= 1KB")
+                    error_msg = "Format 18: file not found or size <= 1KB"
+                    logger.warning(error_msg)
+                    errors_collected.append(error_msg)
                 except Exception as e:
-                    logger.warning("yt-dlp format 18 failed: %s", e)
+                    error_msg = f"yt-dlp format 18 failed: {str(e)}"
+                    logger.warning(error_msg)
+                    errors_collected.append(error_msg)
             # 2) bestvideo+bestaudio + merge (requer ffmpeg)
             self._clean_partial_files(output_path_abs)
             try:
@@ -291,9 +297,13 @@ class DownloaderService:
                 if ok:
                     logger.info("Merge: file found, size %s", os.path.getsize(output_path_abs))
                     return ok
-                logger.warning("Merge: file not found or size <= 1KB")
+                error_msg = "Merge: file not found or size <= 1KB"
+                logger.warning(error_msg)
+                errors_collected.append(error_msg)
             except Exception as e:
-                logger.warning("yt-dlp merge failed: %s", e)
+                error_msg = f"yt-dlp merge failed: {str(e)}"
+                logger.warning(error_msg)
+                errors_collected.append(error_msg)
             # 3) best (formato único)
             self._clean_partial_files(output_path_abs)
             try:
@@ -305,9 +315,13 @@ class DownloaderService:
                 if ok:
                     logger.info("Best: file found, size %s", os.path.getsize(output_path_abs))
                     return ok
-                logger.warning("Best: file not found or size <= 1KB")
+                error_msg = "Best: file not found or size <= 1KB"
+                logger.warning(error_msg)
+                errors_collected.append(error_msg)
             except Exception as e:
-                logger.warning("yt-dlp best failed: %s", e)
+                error_msg = f"yt-dlp best failed: {str(e)}"
+                logger.warning(error_msg)
+                errors_collected.append(error_msg)
             return None
 
         # 1) Padrão: URL como veio (ex. https://www.youtube.com/shorts/ID)
@@ -324,5 +338,21 @@ class DownloaderService:
             if ok:
                 return ok
 
-        return {"status": "failed", "error": "The downloaded file is empty"}
+        # Coletar informações sobre arquivos criados (mesmo que pequenos)
+        file_info = []
+        base = output_path_abs.replace(".mp4", "")
+        for ext in [".mp4", ".webm", ".mkv", ".m4a"]:
+            p = base + ext
+            if os.path.exists(p):
+                size = os.path.getsize(p)
+                file_info.append(f"{os.path.basename(p)}: {size} bytes")
+        
+        error_detail = "All download strategies failed"
+        if errors_collected:
+            error_detail += f". Errors: {'; '.join(errors_collected[:3])}"  # Limitar a 3 erros
+        if file_info:
+            error_detail += f". Files created: {', '.join(file_info)}"
+        
+        logger.error(f"Download failed for {external_video_id}: {error_detail}")
+        return {"status": "failed", "error": error_detail}
 
