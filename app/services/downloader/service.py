@@ -216,14 +216,20 @@ class DownloaderService:
         return None
 
     def _format18_opts(self, output_path_abs: str) -> dict:
-        """Opts para formato 18, igual ao CLI: sem cookies, sem extractor_args."""
-        return {
+        """Opts para formato 18, com cookies se disponível."""
+        opts = {
             "format": "18",
             "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
         }
+        # Tentar usar cookies também no formato 18
+        cookies_path = self._resolve_cookies_path()
+        if cookies_path:
+            opts["cookiefile"] = cookies_path
+            logger.info("Format 18: Using cookies file: %s", cookies_path)
+        return opts
 
     def _base_opts(self, url: str, output_path_abs: str) -> dict:
         """Opts com cookies e extractor_args (merge/best)."""
@@ -234,11 +240,13 @@ class DownloaderService:
             "noplaylist": True,
         }
         if "youtube.com" in url:
-            o["extractor_args"] = {"youtube": {"player_client": ["web", "android"]}}
+            o["extractor_args"] = {"youtube": {"player_client": ["web", "android", "ios"]}}
         cookies_path = self._resolve_cookies_path()
         if cookies_path:
             o["cookiefile"] = cookies_path
             logger.info("Using cookies file: %s", cookies_path)
+        else:
+            logger.warning("No cookies file found - YouTube may block downloads")
         return o
 
     def _clean_partial_files(self, output_path: str) -> None:
