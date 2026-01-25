@@ -1,0 +1,24 @@
+# COMANDOS PARA VERIFICAR COOKIES NA VPS
+
+# 1. Verificar tamanho do arquivo de cookies
+ls -lh ~/content-orchestrator/data/cookies.txt
+ls -lh ~/cookies.txt
+
+# 2. Verificar se o arquivo dentro do container está correto
+docker exec content-orchestrator ls -lh /app/data/cookies.txt
+
+# 3. Verificar se os cookies estão sendo lidos (ver logs)
+docker logs content-orchestrator | grep -i cookie
+
+# 4. Se o arquivo foi substituído por um menor, restaurar:
+# O arquivo original tinha 77006 bytes, o atual tem 1619 bytes
+# Pode ser que foi substituído acidentalmente
+
+# 5. Verificar conteúdo do arquivo (primeiras linhas)
+docker exec content-orchestrator head -10 /app/data/cookies.txt
+
+# 6. Se necessário, copiar o arquivo original novamente:
+cp ~/cookies.txt ~/content-orchestrator/data/cookies.txt
+chown 1000:1000 ~/content-orchestrator/data/cookies.txt
+chmod 644 ~/content-orchestrator/data/cookies.txt
+docker compose restart content-orchestrator
