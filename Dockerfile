@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir --upgrade yt-dlp
 # Copiar aplicação
 COPY . .
 
-# Criar diretórios
-RUN mkdir -p /app/downloads /app/data
+# Criar diretórios (downloads em /content-downloads no Docker, para n8n)
+RUN mkdir -p /app/downloads /app/data /content-downloads
 
 # Executar
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

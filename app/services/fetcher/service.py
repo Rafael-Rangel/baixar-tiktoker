@@ -83,16 +83,22 @@ class FetcherService:
                     if not entry:
                         continue
                     
+                    vid = entry.get('id')
+                    url = entry.get('url') or entry.get('webpage_url')
+                    if not url and platform == "youtube" and vid:
+                        url = f"https://www.youtube.com/watch?v={vid}"
+                    if not url:
+                        continue
                     video_data = {
                         "platform": platform,
                         "external_id": external_id,
-                        "external_video_id": entry.get('id'),
+                        "external_video_id": vid,
                         "title": entry.get('title'),
-                        "url": entry.get('url') or entry.get('webpage_url'),
+                        "url": url,
                         "duration": entry.get('duration'),
                         "view_count": entry.get('view_count'),
                         "group_name": group_name,
-                        "fetched_at": entry.get('upload_date') or entry.get('timestamp')
+                        "fetched_at": entry.get('upload_date') or entry.get("timestamp"),
                     }
                     videos.append(video_data)
 

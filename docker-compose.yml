@@ -1,29 +1,26 @@
+# Content Orchestrator - Produção (VPS)
+# git clone → docker compose up -d
+# Opcional: cp .env.example .env para overrides
+# n8n chama: http://content-orchestrator:8000 (mesma rede Docker)
+
 services:
   content-orchestrator:
     build: .
+    image: content-orchestrator:latest
     container_name: content-orchestrator
     restart: always
-    env_file: .env
     environment:
       - STORAGE_TYPE=local
-      - LOCAL_STORAGE_PATH=/app/downloads
+      - LOCAL_STORAGE_PATH=/content-downloads
+      - DATA_PATH=/app/data
     volumes:
-      - ./downloads:/app/downloads
+      - ./downloads:/content-downloads
       - ./data:/app/data
     ports:
-      - "127.0.0.1:8002:8000"  # Porta 8002 para não conflitar com telegram-downloader (8001)
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.content-orchestrator.rule=Host(`${ORCHESTRATOR_SUBDOMAIN}.${DOMAIN_NAME}`)
-      - traefik.http.routers.content-orchestrator.entrypoints=web,websecure
-      - traefik.http.routers.content-orchestrator.tls=true
-      - traefik.http.routers.content-orchestrator.tls.certresolver=mytlschallenge
-      - traefik.http.services.content-orchestrator.loadbalancer.server.port=8000
-    command: "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      - "127.0.0.1:8000:8000"
     networks:
       - default
 
 networks:
   default:
-    external: true
-    name: root_default
+    driver: bridge

@@ -3,7 +3,7 @@ Endpoints específicos para integração com n8n
 API stateless - recebe dados do n8n, processa e retorna resultados
 Dados gerenciados via Google Sheets no n8n
 """
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
 from app.services.fetcher.service import FetcherService
@@ -23,38 +23,37 @@ class ProcessRequest(BaseModel):
     limit: Optional[int] = None  # Limite de vídeos por fonte (opcional)
 
 @router.post("/process-sources")
-async def process_sources(
-    request: ProcessRequest,
-    background_tasks: BackgroundTasks
-):
+async def process_sources(request: ProcessRequest):
     """
-    Processa fontes recebidas do n8n
-    Retorna lista de vídeos encontrados
+    Processa fontes recebidas do n8n. Aguarda conclusão e retorna vídeos.
+    n8n envia: sources[], limit. Retorna: status, videos_found, videos[], errors[].
     """
     fetcher = FetcherService()
-    results = []
-    
+    videos: List[dict] = []
+    errors: List[dict] = []
+
     for source_data in request.sources:
         try:
-            videos = await fetcher.fetch_from_source_data(
+            items = await fetcher.fetch_from_source_data(
                 platform=source_data.platform,
                 external_id=source_data.external_id,
                 group_name=source_data.group_name,
                 limit=request.limit,
-                video_type=source_data.video_type or "videos"
+                video_type=source_data.video_type or "videos",
             )
-            results.extend(videos)
+            videos.extend(items)
         except Exception as e:
-            results.append({
+            errors.append({
                 "error": str(e),
                 "source": source_data.external_id,
-                "platform": source_data.platform
+                "platform": source_data.platform,
             })
-    
+
     return {
         "status": "completed",
-        "videos_found": len(results),
-        "videos": results
+        "videos_found": len(videos),
+        "videos": videos,
+        "errors": errors,
     }
 
 @router.get("/health")

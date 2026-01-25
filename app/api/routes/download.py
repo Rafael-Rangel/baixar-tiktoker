@@ -1,8 +1,8 @@
 """
 Endpoint de download - stateless
-Recebe dados do vídeo e faz download
+Recebe dados do vídeo e faz download. Aguarda conclusão antes de retornar.
 """
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from app.services.downloader.service import DownloaderService
@@ -18,27 +18,29 @@ class DownloadRequest(BaseModel):
     source_name: Optional[str] = None
 
 @router.post("")
-async def download_content(
-    request: DownloadRequest,
-    background_tasks: BackgroundTasks
-):
+async def download_content(request: DownloadRequest):
     """
-    Faz download de um vídeo
-    Organiza por grupo/fonte se fornecido
+    Faz download de um vídeo. Aguarda o término do download antes de retornar.
+    Retorna sucesso com path do arquivo ou erro se o download falhar.
     """
     downloader = DownloaderService()
-    
-    # Executar em background
-    background_tasks.add_task(
-        downloader.download_video,
+    result = await downloader.download_video(
         video_url=request.video_url,
         platform=request.platform,
         external_video_id=request.external_video_id,
         group_name=request.group_name,
-        source_name=request.source_name
+        source_name=request.source_name,
     )
-    
-    return {
-        "status": "queued",
-        "message": f"Download iniciado para {request.external_video_id}"
-    }
+
+    if result["status"] == "completed":
+        return {
+            "status": "completed",
+            "path": result["path"],
+            "external_video_id": request.external_video_id,
+            "message": "Vídeo baixado com sucesso",
+        }
+
+    raise HTTPException(
+        status_code=422,
+        detail=result.get("error", "Falha ao baixar o vídeo"),
+    )

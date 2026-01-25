@@ -15,6 +15,24 @@ class DownloaderService:
         """Serviço stateless - não precisa de sessão de banco"""
         pass
 
+    def _youtube_watch_url(self, external_video_id: str) -> str:
+        """URL alternativa: watch?v= a partir do ID (fallback quando /shorts/ falha)."""
+        return f"https://www.youtube.com/watch?v={external_video_id}"
+
+    def _resolve_cookies_path(self) -> Optional[str]:
+        """Procura cookies.txt em data/ e na raiz do projeto (cookies.txt)."""
+        candidates = [
+            os.path.join(settings.DATA_PATH, "cookies.txt"),
+            os.path.join(os.getcwd(), "cookies.txt"),
+        ]
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        if root not in (os.getcwd(),):
+            candidates.append(os.path.join(root, "cookies.txt"))
+        for p in candidates:
+            if os.path.isfile(p):
+                return p
+        return None
+
     def _sanitize_filename(self, filename: str, max_length: int = 200) -> str:
         """Limpa o nome do arquivo criando um slug: minúsculo, sem acentos, sem emojis, espaços viram underscores"""
         import re
@@ -100,11 +118,10 @@ class DownloaderService:
                 'skip_download': True,  # Não baixar, só pegar info
             }
             
-            # Tentar usar cookies se existirem
-            cookies_path = os.path.join(settings.LOCAL_STORAGE_PATH, '..', 'data', 'cookies.txt')
-            if os.path.exists(cookies_path):
-                ydl_opts['cookiefile'] = cookies_path
-            
+            cookies_path = self._resolve_cookies_path()
+            if cookies_path:
+                ydl_opts["cookiefile"] = cookies_path
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
                 return info.get('title')
@@ -124,14 +141,14 @@ class DownloaderService:
         Faz download de um vídeo usando múltiplas estratégias
         Organiza por: downloads/{grupo}/{fonte}/{titulo_do_video}.mp4
         """
-        # Organizar estrutura de pastas
+        # Organizar estrutura de pastas (caminhos absolutos)
+        base_dir = os.path.abspath(settings.LOCAL_STORAGE_PATH)
         if group_name and source_name:
             group_folder = group_name.replace(" ", "_").lower()
-            source_folder = source_name.replace(" ", "_").lower()
-            download_dir = os.path.join(settings.LOCAL_STORAGE_PATH, group_folder, source_folder)
+            source_folder = source_name.replace("@", "").strip().replace(" ", "_").lower()
+            download_dir = os.path.abspath(os.path.join(base_dir, group_folder, source_folder))
         else:
-            download_dir = os.path.join(settings.LOCAL_STORAGE_PATH, platform)
-        
+            download_dir = os.path.abspath(os.path.join(base_dir, platform))
         os.makedirs(download_dir, exist_ok=True)
         
         # Buscar título do vídeo
@@ -140,11 +157,10 @@ class DownloaderService:
         # Usar título se disponível, senão usar external_video_id
         if video_title:
             filename = self._sanitize_filename(video_title)
-            output_path = os.path.join(download_dir, f"{filename}.mp4")
+            output_path = os.path.abspath(os.path.join(download_dir, f"{filename}.mp4"))
             logger.info(f"Using video title as filename: {filename}")
         else:
-            # Fallback para external_video_id se não conseguir o título
-            output_path = os.path.join(download_dir, f"{external_video_id}.mp4")
+            output_path = os.path.abspath(os.path.join(download_dir, f"{external_video_id}.mp4"))
             logger.warning(f"Could not get video title, using external_video_id: {external_video_id}")
 
         # Verificar se arquivo já existe e está completo
@@ -154,7 +170,7 @@ class DownloaderService:
             existing_path = output_path
         else:
             # Verificar se existe com o nome antigo (video_id)
-            old_path = os.path.join(download_dir, f"{external_video_id}.mp4")
+            old_path = os.path.abspath(os.path.join(download_dir, f"{external_video_id}.mp4"))
             if os.path.exists(old_path) and os.path.getsize(old_path) > 1000:
                 existing_path = old_path
         
@@ -162,10 +178,10 @@ class DownloaderService:
             logger.info(f"File already exists: {existing_path} ({os.path.getsize(existing_path)} bytes)")
             return {"status": "completed", "path": existing_path}
 
-        # Usar yt-dlp como biblioteca (única estratégia)
+        # Padrão: usa a URL recebida (ex.: https://www.youtube.com/shorts/ID). Fallback: watch?v=ID.
         try:
             logger.info(f"Downloading {external_video_id} with yt-dlp")
-            result = await self._download_with_ytdlp_library(video_url, output_path)
+            result = await self._download_with_ytdlp_library(video_url, output_path, external_video_id)
             
             # Verificar se arquivo foi criado mesmo se status não for "completed"
             if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
@@ -186,49 +202,127 @@ class DownloaderService:
                 return {"status": "completed", "path": output_path}
             return {"status": "failed", "error": f"Download failed: {str(e)}"}
 
-    async def _download_with_ytdlp_library(self, video_url: str, output_path: str):
-        """Estratégia 1: yt-dlp como biblioteca Python (MAIS CONFIÁVEL)"""
+    def _check_download_output(self, output_path: str) -> Optional[dict]:
+        """Verifica se o download produziu um arquivo válido (> 1KB)."""
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+            return {"status": "completed", "path": output_path}
+        base = output_path.replace(".mp4", "")
+        for ext in [".mp4", ".webm", ".mkv", ".m4a"]:
+            p = base + ext
+            if os.path.exists(p) and os.path.getsize(p) > 1000:
+                if ext != ".mp4":
+                    os.rename(p, output_path)
+                return {"status": "completed", "path": output_path}
+        return None
+
+    def _format18_opts(self, output_path_abs: str) -> dict:
+        """Opts para formato 18, igual ao CLI: sem cookies, sem extractor_args."""
+        return {
+            "format": "18",
+            "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+        }
+
+    def _base_opts(self, url: str, output_path_abs: str) -> dict:
+        """Opts com cookies e extractor_args (merge/best)."""
+        o = {
+            "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+        if "youtube.com" in url:
+            o["extractor_args"] = {"youtube": {"player_client": ["web", "android"]}}
+        cookies_path = self._resolve_cookies_path()
+        if cookies_path:
+            o["cookiefile"] = cookies_path
+            logger.info("Using cookies file: %s", cookies_path)
+        return o
+
+    def _clean_partial_files(self, output_path: str) -> None:
+        """Remove arquivos vazios ou parciais (<= 1KB) em output_path e base+ext."""
+        base = output_path.replace(".mp4", "")
+        candidates = [output_path] + [base + e for e in [".webm", ".mkv", ".m4a"]]
+        for p in candidates:
+            if not os.path.exists(p):
+                continue
+            try:
+                if os.path.getsize(p) <= 1000:
+                    os.remove(p)
+            except OSError:
+                pass
+
+    async def _download_with_ytdlp_library(self, video_url: str, output_path: str, external_video_id: Optional[str] = None):
+        """yt-dlp: 1) URL como recebida (ex. /shorts/ID); 2) fallback watch?v=ID; 3) format 18 (CLI-like) depois merge/best."""
         try:
             import yt_dlp
-            
-            # Configurações do yt-dlp
-            ydl_opts = {
-                'format': 'best[ext=mp4]/best',
-                'outtmpl': output_path.replace('.mp4', '.%(ext)s'),
-                'quiet': True,
-                'no_warnings': True,
-                'noplaylist': True,
-            }
-            
-            # Tentar usar cookies se existirem
-            cookies_path = os.path.join(settings.LOCAL_STORAGE_PATH, '..', 'data', 'cookies.txt')
-            if os.path.exists(cookies_path):
-                ydl_opts['cookiefile'] = cookies_path
-                logger.info("Using cookies file")
-            
-            # Usar yt-dlp como biblioteca
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([video_url])
-            
-            # Verificar se arquivo foi criado
-            if os.path.exists(output_path):
-                return {"status": "completed", "path": output_path}
-            
-            # Procurar arquivo com extensão diferente
-            base_path = output_path.replace('.mp4', '')
-            for ext in ['.mp4', '.webm', '.mkv', '.m4a']:
-                test_path = base_path + ext
-                if os.path.exists(test_path):
-                    # Se não for mp4, renomear para mp4
-                    if ext != '.mp4':
-                        os.rename(test_path, output_path)
-                    return {"status": "completed", "path": output_path}
-            
-            return {"status": "failed", "error": "File not found after yt-dlp download"}
-                
         except ImportError:
             return {"status": "failed", "error": "yt-dlp library not installed"}
-        except Exception as e:
-            logger.error(f"yt-dlp library error: {e}")
-            return {"status": "failed", "error": f"yt-dlp error: {str(e)[:200]}"}
+
+        output_path_abs = os.path.abspath(output_path)
+        logger.info("Download output_path (absolute): %s", output_path_abs)
+
+        def try_download(url: str) -> Optional[dict]:
+            self._clean_partial_files(output_path_abs)
+            # 1) YouTube: formato 18, opts mínimos (igual CLI: sem cookies, sem extractor_args)
+            if "youtube.com" in url:
+                try:
+                    logger.info("Attempt: format 18 (no cookies, no extractor_args)")
+                    opts = self._format18_opts(output_path_abs)
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([url])
+                    ok = self._check_download_output(output_path_abs)
+                    if ok:
+                        logger.info("Format 18: file found, size %s", os.path.getsize(output_path_abs))
+                        return ok
+                    logger.warning("Format 18: file not found or size <= 1KB")
+                except Exception as e:
+                    logger.warning("yt-dlp format 18 failed: %s", e)
+            # 2) bestvideo+bestaudio + merge (requer ffmpeg)
+            self._clean_partial_files(output_path_abs)
+            try:
+                logger.info("Attempt: bestvideo+bestaudio + merge")
+                opts = {**self._base_opts(url, output_path_abs), "format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                ok = self._check_download_output(output_path_abs)
+                if ok:
+                    logger.info("Merge: file found, size %s", os.path.getsize(output_path_abs))
+                    return ok
+                logger.warning("Merge: file not found or size <= 1KB")
+            except Exception as e:
+                logger.warning("yt-dlp merge failed: %s", e)
+            # 3) best (formato único)
+            self._clean_partial_files(output_path_abs)
+            try:
+                logger.info("Attempt: best")
+                opts = {**self._base_opts(url, output_path_abs), "format": "best"}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                ok = self._check_download_output(output_path_abs)
+                if ok:
+                    logger.info("Best: file found, size %s", os.path.getsize(output_path_abs))
+                    return ok
+                logger.warning("Best: file not found or size <= 1KB")
+            except Exception as e:
+                logger.warning("yt-dlp best failed: %s", e)
+            return None
+
+        # 1) Padrão: URL como veio (ex. https://www.youtube.com/shorts/ID)
+        logger.info("Trying URL (padrão): %s", video_url)
+        ok = try_download(video_url)
+        if ok:
+            return ok
+
+        # 2) Fallback: watch?v=ID (derivado do padrão)
+        if external_video_id and "youtube.com" in video_url:
+            alt = self._youtube_watch_url(external_video_id)
+            logger.info("Trying URL (fallback): %s", alt)
+            ok = try_download(alt)
+            if ok:
+                return ok
+
+        return {"status": "failed", "error": "The downloaded file is empty"}
 
