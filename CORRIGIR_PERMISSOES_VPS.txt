@@ -1,0 +1,23 @@
+# COMANDOS PARA CORRIGIR PERMISSÕES DO COOKIES.TXT
+
+# O problema é que o cookies.txt não tem permissão de leitura para o usuário 1000:1000
+# Execute na VPS:
+
+# 1. Verificar se o arquivo existe
+ls -la ~/content-orchestrator/data/cookies.txt
+ls -la ~/cookies.txt
+
+# 2. Copiar cookies.txt para o diretório data/ se não estiver lá
+cp ~/cookies.txt ~/content-orchestrator/data/cookies.txt
+
+# 3. Ajustar permissões (usuário 1000:1000 pode ler)
+chown 1000:1000 ~/content-orchestrator/data/cookies.txt
+chmod 644 ~/content-orchestrator/data/cookies.txt
+
+# 4. Verificar permissões
+ls -la ~/content-orchestrator/data/cookies.txt
+
+# 5. Reiniciar container
+docker compose restart content-orchestrator
+
+# 6. Testar novamente o download
