@@ -229,6 +229,9 @@ class DownloaderService:
         if cookies_path:
             opts["cookiefile"] = cookies_path
             logger.info("Format 18: Using cookies file: %s", cookies_path)
+        # Adicionar opções para evitar detecção de bot
+        if "youtube.com" in str(output_path_abs) or True:  # Sempre adicionar para YouTube
+            opts["extractor_args"] = {"youtube": {"player_client": ["ios"]}}
         return opts
 
     def _base_opts(self, url: str, output_path_abs: str) -> dict:
@@ -240,7 +243,10 @@ class DownloaderService:
             "noplaylist": True,
         }
         if "youtube.com" in url:
-            o["extractor_args"] = {"youtube": {"player_client": ["web", "android", "ios"]}}
+            # Tentar diferentes clientes para evitar detecção
+            o["extractor_args"] = {"youtube": {"player_client": ["ios", "android", "web"]}}
+            # Adicionar referer para parecer mais legítimo
+            o["referer"] = "https://www.youtube.com/"
         cookies_path = self._resolve_cookies_path()
         if cookies_path:
             o["cookiefile"] = cookies_path
