@@ -1,0 +1,28 @@
+# ✅ Código atualizado e cookies verificados!
+# Agora execute estes comandos finais:
+
+# 1. Rebuild do container (sem cache para garantir que usa o código novo)
+docker compose build content-orchestrator --no-cache
+
+# 2. Reiniciar container
+docker compose up -d content-orchestrator
+
+# 3. Verificar logs em tempo real
+docker logs -f content-orchestrator
+
+# 4. (Opcional) Verificar se o código novo está sendo usado
+docker exec content-orchestrator head -30 /app/app/services/downloader/service.py | grep -A 5 "_resolve_cookies_path"
+
+# 5. (Opcional) Testar resolução de cookies dentro do container
+docker exec content-orchestrator python3 -c "
+import os
+import sys
+sys.path.insert(0, '/app')
+from app.services.downloader.service import DownloaderService
+ds = DownloaderService()
+path = ds._resolve_cookies_path()
+print(f'Cookies path resolved to: {path}')
+if path:
+    print(f'File exists: {os.path.exists(path)}')
+    print(f'File size: {os.path.getsize(path)} bytes')
+"
