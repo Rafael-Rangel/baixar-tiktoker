@@ -1,0 +1,20 @@
+# 🔍 Verificar rede Docker dos containers
+
+# 1. Verificar em qual rede o n8n está
+docker inspect root-n8n-1 | grep -A 10 "Networks"
+
+# 2. Verificar em qual rede o content-orchestrator está
+docker inspect content-orchestrator | grep -A 10 "Networks"
+
+# 3. Listar todas as redes Docker
+docker network ls
+
+# 4. Verificar se estão na mesma rede
+docker network inspect bridge | grep -E "(root-n8n-1|content-orchestrator)"
+
+# SOLUÇÃO: Adicionar content-orchestrator à mesma rede do n8n
+# Se o n8n estiver na rede "root_default" ou similar:
+docker network connect root_default content-orchestrator
+
+# OU usar IP do container diretamente no n8n:
+docker inspect content-orchestrator | grep IPAddress

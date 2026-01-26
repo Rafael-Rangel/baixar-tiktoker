@@ -1,6 +1,7 @@
 """
 Serviço de download usando yt-dlp (biblioteca Python)
 Estratégia única e confiável para download de vídeos
+Fallback automático para Selenium quando yt-dlp falha por detecção de bot
 """
 import os
 import logging
@@ -384,6 +385,35 @@ class DownloaderService:
             error_detail += f". Errors: {'; '.join(errors_collected[:3])}"  # Limitar a 3 erros
         if file_info:
             error_detail += f". Files created: {', '.join(file_info)}"
+        
+        # Verificar se o erro é relacionado a bot detection
+        error_lower = error_detail.lower()
+        is_bot_error = any(keyword in error_lower for keyword in [
+            "bot", "sign in", "authentication", "confirm you're not a bot"
+        ])
+        
+        # Se for erro de bot detection e for YouTube, tentar Selenium como último recurso
+        if is_bot_error and "youtube.com" in video_url:
+            logger.info("yt-dlp failed with bot detection, trying Selenium fallback...")
+            try:
+                from app.services.downloader.selenium_service import SeleniumDownloaderService
+                selenium_service = SeleniumDownloaderService()
+                selenium_result = await selenium_service.download_video(
+                    video_url, output_path_abs, external_video_id
+                )
+                
+                if selenium_result.get('status') == 'completed':
+                    logger.info("Selenium fallback succeeded!")
+                    return selenium_result
+                else:
+                    logger.warning(f"Selenium fallback also failed: {selenium_result.get('error')}")
+                    error_detail += f". Selenium fallback failed: {selenium_result.get('error', 'Unknown error')}"
+            except ImportError:
+                logger.warning("Selenium not available, skipping fallback")
+                error_detail += ". Selenium fallback not available (ImportError)"
+            except Exception as e:
+                logger.error(f"Selenium fallback exception: {e}")
+                error_detail += f". Selenium fallback exception: {str(e)}"
         
         logger.error(f"Download failed for {external_video_id}: {error_detail}")
         return {"status": "failed", "error": error_detail}

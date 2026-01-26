@@ -6,3 +6,5 @@ pydantic-settings
 httpx
 tenacity
 yt-dlp>=2023.12.30
+selenium>=4.15.0
+webdriver-manager>=4.0.0

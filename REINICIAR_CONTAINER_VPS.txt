@@ -1,0 +1,19 @@
+# ⚠️ IMPORTANTE: Reiniciar container após rebuild
+
+# O container precisa ser PARADO e REMOVIDO antes de subir novamente:
+
+docker compose stop content-orchestrator
+docker compose rm -f content-orchestrator
+docker compose up -d content-orchestrator
+
+# OU simplesmente reiniciar:
+docker compose restart content-orchestrator
+
+# Verificar se está rodando:
+docker ps | grep content-orchestrator
+
+# Verificar logs para confirmar código novo:
+docker logs content-orchestrator --tail 50 | grep -E "(Found cookies|Using cookies|absolute)"
+
+# Se ainda aparecer "data/cookies.txt" (relativo), o código antigo está rodando.
+# Deve aparecer "/app/data/cookies.txt" (absoluto).

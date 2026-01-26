@@ -1,0 +1,19 @@
+# 🔧 FORÇAR REINÍCIO DO CONTAINER
+
+# O docker compose pode não estar encontrando o container.
+# Use comandos Docker diretos:
+
+# 1. Parar o container diretamente
+docker stop content-orchestrator
+
+# 2. Remover o container
+docker rm content-orchestrator
+
+# 3. Subir novamente com docker compose
+docker compose up -d content-orchestrator
+
+# 4. Verificar se está rodando
+docker ps | grep content-orchestrator
+
+# 5. Verificar logs para confirmar código novo
+docker logs content-orchestrator --tail 30 | grep -E "(Found cookies|Using cookies|absolute)"
