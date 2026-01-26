@@ -33,12 +33,28 @@ class SeleniumDownloaderService:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
         options.add_argument("--disable-software-rasterizer")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+        options.add_argument("--disable-features=IsolateOrigins,site-per-process,VizDisplayCompositor")
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--start-maximized")
+        # Flags adicionais para evitar detecção
+        options.add_argument("--disable-web-security")
+        options.add_argument("--disable-features=TranslateUI")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-component-extensions-with-background-pages")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--mute-audio")
+        options.add_argument("--no-first-run")
+        options.add_argument("--no-default-browser-check")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-breakpad")
+        options.add_argument("--disable-crash-reporter")
+        options.add_argument("--disable-extensions-file-access-check")
+        options.add_argument("--disable-extensions-http-throttling")
         options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
         options.add_experimental_option('useAutomationExtension', False)
         options.add_experimental_option("detach", True)
@@ -49,10 +65,13 @@ class SeleniumDownloaderService:
             "profile.default_content_setting_values": {
                 "notifications": 2,
                 "geolocation": 2,
+                "media_stream": 2,
             },
             "profile.managed_default_content_settings": {
                 "images": 1
-            }
+            },
+            "profile.default_content_settings.popups": 0,
+            "profile.content_settings.exceptions.automatic_downloads.*.setting": 1,
         }
         options.add_experimental_option("prefs", prefs)
         return options
@@ -76,8 +95,38 @@ class SeleniumDownloaderService:
                         get: () => [1, 2, 3, 4, 5]
                     });
                     Object.defineProperty(navigator, 'languages', {
-                        get: () => ['en-US', 'en']
+                        get: () => ['en-US', 'en', 'pt-BR', 'pt']
                     });
+                    Object.defineProperty(navigator, 'permissions', {
+                        get: () => ({
+                            query: () => Promise.resolve({ state: 'granted' })
+                        })
+                    });
+                    // Sobrescrever getBattery se existir
+                    if (navigator.getBattery) {
+                        navigator.getBattery = () => Promise.resolve({
+                            charging: true,
+                            chargingTime: 0,
+                            dischargingTime: Infinity,
+                            level: 1
+                        });
+                    }
+                '''
+            })
+            
+            # Adicionar script para mascarar WebGL
+            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+                'source': '''
+                    const getParameter = WebGLRenderingContext.prototype.getParameter;
+                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                        if (parameter === 37445) {
+                            return 'Intel Inc.';
+                        }
+                        if (parameter === 37446) {
+                            return 'Intel Iris OpenGL Engine';
+                        }
+                        return getParameter.call(this, parameter);
+                    };
                 '''
             })
             return driver
@@ -161,57 +210,107 @@ class SeleniumDownloaderService:
             # Estabelecer sessão navegando primeiro para a página inicial do YouTube
             logger.info("Selenium: Establishing session on YouTube homepage...")
             self.driver.get("https://www.youtube.com")
-            time.sleep(3)  # Aguardar página inicial carregar
             
-            # Fazer scroll para simular interação humana
+            # Aguardar página inicial carregar completamente
+            time.sleep(5)
+            
+            # Fazer múltiplas interações para parecer mais humano
             try:
-                self.driver.execute_script("window.scrollTo(0, 300);")
-                time.sleep(1)
-                self.driver.execute_script("window.scrollTo(0, 0);")
-                time.sleep(1)
-            except:
-                pass
+                # Scroll gradual múltiplas vezes
+                for scroll_pos in [200, 400, 600, 300, 0]:
+                    self.driver.execute_script(f"window.scrollTo(0, {scroll_pos});")
+                    time.sleep(1.5)
+                
+                # Simular movimento do mouse (via JavaScript)
+                self.driver.execute_script("""
+                    var event = new MouseEvent('mousemove', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: 100,
+                        clientY: 100
+                    });
+                    document.dispatchEvent(event);
+                """)
+                time.sleep(2)
+            except Exception as e:
+                logger.warning(f"Selenium: Error during homepage interaction: {e}")
+            
+            # Aguardar mais tempo para sessão se estabelecer
+            time.sleep(5)
             
             logger.info(f"Selenium: Navigating to {video_url}")
             
             # Navegar até o vídeo (agora com cookies carregados e sessão estabelecida)
             self.driver.get(video_url)
             
-            # Verificar se não há bloqueio de bot
+            # Aguardar um pouco antes de verificar bloqueio
+            time.sleep(3)
+            
+            # Verificar se não há bloqueio de bot (mas não desistir imediatamente)
             page_source = self.driver.page_source.lower()
-            if "sorry" in page_source and "bot" in page_source:
-                logger.error("Selenium: YouTube bot detection page detected!")
-                return None
+            page_url = self.driver.current_url.lower()
+            
+            # Verificação mais específica - só bloquear se realmente for página de erro
+            is_blocked = (
+                ("sorry" in page_source and "bot" in page_source and "verify" in page_source) or
+                ("unusual traffic" in page_source) or
+                ("/sorry/" in page_url)
+            )
+            
+            if is_blocked:
+                logger.warning("Selenium: Possible bot detection page detected, but continuing anyway...")
+                # Tentar aguardar mais - às vezes é apenas um aviso temporário
+                time.sleep(5)
+                # Recarregar a página
+                self.driver.refresh()
+                time.sleep(5)
             
             # Aguardar página carregar (aguardar elemento de vídeo aparecer)
             video_found = False
             try:
-                WebDriverWait(self.driver, 20).until(
+                WebDriverWait(self.driver, 30).until(
                     EC.presence_of_element_located((By.TAG_NAME, "video"))
                 )
                 logger.info("Selenium: Video element found, page loaded")
                 video_found = True
             except TimeoutException:
                 logger.warning("Selenium: Video element not found, but continuing...")
-                # Verificar se há mensagem de erro na página
-                if "unavailable" in page_source or "private" in page_source:
+                # Verificar novamente se há mensagem de erro na página
+                current_source = self.driver.page_source.lower()
+                if ("unavailable" in current_source or "private" in current_source) and not is_blocked:
                     logger.error("Selenium: Video appears to be unavailable or private")
                     return None
             
             # Aguardar mais tempo para garantir que página carregou completamente
             # e cookies de sessão foram atualizados
-            time.sleep(8)  # Aumentado de 5 para 8 segundos
+            time.sleep(10)  # Aumentado para 10 segundos
             
             # Simular interações humanas mais realistas
             try:
-                # Scroll gradual para baixo
-                for i in range(3):
-                    scroll_pos = (i + 1) * 200
+                # Scroll gradual para baixo (múltiplas vezes)
+                for i in range(5):
+                    scroll_pos = (i + 1) * 150
                     self.driver.execute_script(f"window.scrollTo(0, {scroll_pos});")
-                    time.sleep(1.5)
+                    time.sleep(1.2)
                 
-                # Scroll de volta para cima
-                self.driver.execute_script("window.scrollTo(0, 0);")
+                # Scroll de volta para cima gradualmente
+                for i in range(3, -1, -1):
+                    scroll_pos = i * 150
+                    self.driver.execute_script(f"window.scrollTo(0, {scroll_pos});")
+                    time.sleep(1)
+                
+                # Simular movimento do mouse sobre a página
+                self.driver.execute_script("""
+                    var event = new MouseEvent('mousemove', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: Math.random() * 800,
+                        clientY: Math.random() * 600
+                    });
+                    document.dispatchEvent(event);
+                """)
                 time.sleep(2)
                 
                 # Tentar interagir com o player de vídeo (se disponível)
@@ -219,15 +318,19 @@ class SeleniumDownloaderService:
                     try:
                         # Tentar clicar no vídeo para iniciar (pode gerar mais cookies)
                         video_element = self.driver.find_element(By.TAG_NAME, "video")
+                        # Primeiro tentar via JavaScript
+                        self.driver.execute_script("arguments[0].play();", video_element)
+                        time.sleep(2)
+                        # Depois tentar clicar
                         self.driver.execute_script("arguments[0].click();", video_element)
                         time.sleep(2)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Selenium: Could not interact with video element: {e}")
             except Exception as e:
                 logger.warning(f"Selenium: Error during page interaction: {e}")
             
             # Aguardar mais um pouco para cookies serem atualizados após interações
-            time.sleep(3)
+            time.sleep(5)  # Aumentado de 3 para 5 segundos
             
             # Extrair cookies do navegador
             cookies = self.driver.get_cookies()
