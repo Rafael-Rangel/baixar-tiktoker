@@ -365,6 +365,16 @@ class SeleniumDownloaderService:
             temp_cookies_file.close()
             logger.info(f"Selenium: Extracted {len(cookies)} cookies to {temp_cookies_file.name}")
             
+            # Validar arquivo de cookies criado
+            if os.path.exists(temp_cookies_file.name):
+                file_size = os.path.getsize(temp_cookies_file.name)
+                logger.info(f"Selenium: Cookie file size: {file_size} bytes")
+                if file_size < 100:
+                    logger.warning("Selenium: Cookie file seems too small, may be invalid")
+            else:
+                logger.error("Selenium: Cookie file was not created!")
+                return None
+            
             return temp_cookies_file.name
             
         except Exception as e:
@@ -402,10 +412,30 @@ class SeleniumDownloaderService:
             if not cookies_file:
                 return {"status": "failed", "error": "Failed to extract cookies from browser"}
             
+            # Validar arquivo de cookies antes de usar
+            if not os.path.exists(cookies_file):
+                logger.error(f"Selenium: Cookie file does not exist: {cookies_file}")
+                return {"status": "failed", "error": "Cookie file not found"}
+            
+            cookie_file_size = os.path.getsize(cookies_file)
+            logger.info(f"Selenium: Cookie file validated: {cookie_file_size} bytes")
+            
             # Tentar download com yt-dlp usando cookies do navegador
             logger.info("Selenium: Attempting download with yt-dlp using browser cookies")
             
             output_path_abs = os.path.abspath(output_path)
+            
+            # Ler algumas linhas do arquivo de cookies para debug
+            try:
+                with open(cookies_file, 'r') as f:
+                    lines = f.readlines()
+                    cookie_count = len([l for l in lines if l.strip() and not l.startswith('#')])
+                    logger.info(f"Selenium: Cookie file contains {cookie_count} cookie entries")
+                    # Log primeiras linhas (sem valores sensíveis)
+                    if lines:
+                        logger.debug(f"Selenium: First cookie line: {lines[0][:100]}...")
+            except Exception as e:
+                logger.warning(f"Selenium: Could not read cookie file for validation: {e}")
             
             # Tentar múltiplas estratégias com os cookies do navegador
             strategies = [
@@ -442,8 +472,8 @@ class SeleniumDownloaderService:
                         "cookiefile": cookies_file,
                         "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
                         "format": "best",
-                        "quiet": True,
-                        "no_warnings": True,
+                        "quiet": False,
+                        "no_warnings": False,
                         "noplaylist": True,
                         "extractor_args": {
                             "youtube": {
@@ -460,8 +490,8 @@ class SeleniumDownloaderService:
                         "cookiefile": cookies_file,
                         "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
                         "format": "18",
-                        "quiet": True,
-                        "no_warnings": True,
+                        "quiet": False,
+                        "no_warnings": False,
                         "noplaylist": True,
                         "referer": "https://www.youtube.com/",
                         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -472,8 +502,26 @@ class SeleniumDownloaderService:
             for strategy in strategies:
                 try:
                     logger.info(f"Selenium: Trying strategy: {strategy['name']}")
+                    logger.info(f"Selenium: Using cookie file: {cookies_file} (size: {os.path.getsize(cookies_file)} bytes)")
+                    
+                    # Capturar stderr para ver mensagens detalhadas do yt-dlp
+                    import sys
+                    import io
+                    stderr_capture = io.StringIO()
+                    
                     with yt_dlp.YoutubeDL(strategy['opts']) as ydl:
-                        ydl.download([video_url])
+                        # Redirecionar stderr temporariamente para capturar mensagens
+                        old_stderr = sys.stderr
+                        sys.stderr = stderr_capture
+                        try:
+                            ydl.download([video_url])
+                        finally:
+                            sys.stderr = old_stderr
+                    
+                    # Log mensagens capturadas
+                    stderr_output = stderr_capture.getvalue()
+                    if stderr_output:
+                        logger.debug(f"Selenium: yt-dlp output: {stderr_output[:500]}")
                     
                     # Verificar se arquivo foi criado
                     if os.path.exists(output_path_abs) and os.path.getsize(output_path_abs) > 1000:
@@ -491,7 +539,11 @@ class SeleniumDownloaderService:
                             return {"status": "completed", "path": output_path_abs}
                             
                 except Exception as e:
-                    logger.warning(f"Selenium: Strategy {strategy['name']} failed: {e}")
+                    error_msg = str(e)
+                    logger.warning(f"Selenium: Strategy {strategy['name']} failed: {error_msg}")
+                    # Se o erro menciona cookies, pode ser problema com o arquivo
+                    if "cookie" in error_msg.lower() or "authentication" in error_msg.lower():
+                        logger.warning(f"Selenium: Cookie-related error detected, cookie file may be invalid")
                     continue
             
             # Se todas as estratégias falharam, retornar erro
