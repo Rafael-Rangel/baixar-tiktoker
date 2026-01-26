@@ -132,6 +132,8 @@ class DownloaderService:
             
             cookies_path = self._resolve_cookies_path()
             if cookies_path:
+                # Garantir que sempre usamos caminho absoluto
+                cookies_path = os.path.abspath(cookies_path)
                 ydl_opts["cookiefile"] = cookies_path
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -239,8 +241,10 @@ class DownloaderService:
         # Tentar usar cookies também no formato 18
         cookies_path = self._resolve_cookies_path()
         if cookies_path:
+            # Garantir que sempre usamos caminho absoluto
+            cookies_path = os.path.abspath(cookies_path)
             opts["cookiefile"] = cookies_path
-            logger.info("Format 18: Using cookies file: %s", cookies_path)
+            logger.info("Format 18: Using cookies file (absolute): %s", cookies_path)
         # Adicionar opções para evitar detecção de bot
         if "youtube.com" in str(output_path_abs) or True:  # Sempre adicionar para YouTube
             opts["extractor_args"] = {"youtube": {"player_client": ["ios"]}}
@@ -261,8 +265,10 @@ class DownloaderService:
             o["referer"] = "https://www.youtube.com/"
         cookies_path = self._resolve_cookies_path()
         if cookies_path:
+            # Garantir que sempre usamos caminho absoluto
+            cookies_path = os.path.abspath(cookies_path)
             o["cookiefile"] = cookies_path
-            logger.info("Using cookies file: %s", cookies_path)
+            logger.info("Using cookies file (absolute): %s", cookies_path)
         else:
             logger.warning("No cookies file found - YouTube may block downloads")
         return o
