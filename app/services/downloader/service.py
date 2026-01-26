@@ -21,16 +21,28 @@ class DownloaderService:
 
     def _resolve_cookies_path(self) -> Optional[str]:
         """Procura cookies.txt em data/ e na raiz do projeto (cookies.txt)."""
+        # Sempre usar caminhos absolutos
+        data_path = settings.DATA_PATH
+        if not os.path.isabs(data_path):
+            # Se DATA_PATH for relativo, tornar absoluto baseado no diretório de trabalho
+            data_path = os.path.abspath(os.path.join(os.getcwd(), data_path))
+        
         candidates = [
-            os.path.join(settings.DATA_PATH, "cookies.txt"),
+            os.path.join(data_path, "cookies.txt"),
             os.path.join(os.getcwd(), "cookies.txt"),
         ]
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         if root not in (os.getcwd(),):
             candidates.append(os.path.join(root, "cookies.txt"))
+        # Adicionar caminho absoluto explícito para /app/data/cookies.txt (container Docker)
+        candidates.append("/app/data/cookies.txt")
+        
         for p in candidates:
             if os.path.isfile(p):
-                return p
+                abs_path = os.path.abspath(p)
+                logger.info(f"Found cookies file at: {abs_path}")
+                return abs_path
+        logger.warning("No cookies file found in any candidate location")
         return None
 
     def _sanitize_filename(self, filename: str, max_length: int = 200) -> str:
