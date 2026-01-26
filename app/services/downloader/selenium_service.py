@@ -60,13 +60,81 @@ class SeleniumDownloaderService:
             logger.error(f"Failed to initialize Chrome driver: {e}")
             raise
     
+    def _load_existing_cookies(self) -> bool:
+        """Carrega cookies existentes do arquivo cookies.txt no navegador"""
+        try:
+            from app.core.config import get_settings
+            from app.services.downloader.service import DownloaderService
+            
+            settings = get_settings()
+            downloader = DownloaderService()
+            cookies_path = downloader._resolve_cookies_path()
+            
+            if not cookies_path or not os.path.exists(cookies_path):
+                logger.warning("Selenium: No existing cookies file found")
+                return False
+            
+            # Ler cookies do arquivo Netscape
+            logger.info(f"Selenium: Loading existing cookies from {cookies_path}")
+            cookies_loaded = 0
+            
+            # Primeiro navegar até o domínio para poder adicionar cookies
+            self.driver.get("https://www.youtube.com")
+            time.sleep(2)
+            
+            with open(cookies_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    # Formato Netscape: domain, flag, path, secure, expiration, name, value
+                    parts = line.split('\t')
+                    if len(parts) < 7:
+                        continue
+                    
+                    domain, flag, path, secure, expiration, name, value = parts[:7]
+                    
+                    # Converter para formato do Selenium
+                    cookie_dict = {
+                        'name': name,
+                        'value': value,
+                        'domain': domain.lstrip('.'),
+                        'path': path,
+                        'secure': secure == 'TRUE',
+                    }
+                    
+                    if expiration and expiration != '0':
+                        try:
+                            cookie_dict['expiry'] = int(expiration)
+                        except:
+                            pass
+                    
+                    try:
+                        self.driver.add_cookie(cookie_dict)
+                        cookies_loaded += 1
+                    except Exception as e:
+                        # Alguns cookies podem falhar (domínio incorreto, etc)
+                        pass
+            
+            logger.info(f"Selenium: Loaded {cookies_loaded} cookies from file")
+            return cookies_loaded > 0
+            
+        except Exception as e:
+            logger.warning(f"Selenium: Failed to load existing cookies: {e}")
+            return False
+    
     def _extract_cookies_from_browser(self, video_url: str) -> Optional[str]:
         """Extrai cookies do navegador após navegar até o vídeo"""
         try:
             self.driver = self._init_driver()
+            
+            # Carregar cookies existentes primeiro
+            self._load_existing_cookies()
+            
             logger.info(f"Selenium: Navigating to {video_url}")
             
-            # Navegar até o vídeo
+            # Navegar até o vídeo (agora com cookies carregados)
             self.driver.get(video_url)
             
             # Aguardar página carregar (aguardar elemento de vídeo aparecer)
@@ -78,9 +146,17 @@ class SeleniumDownloaderService:
             except TimeoutException:
                 logger.warning("Selenium: Video element not found, but continuing...")
             
-            # Aguardar um pouco mais para garantir que cookies estão atualizados
-            import time
-            time.sleep(3)
+            # Aguardar mais tempo para garantir que página carregou completamente
+            # e cookies de sessão foram atualizados
+            time.sleep(5)
+            
+            # Tentar interagir com a página para gerar mais cookies
+            try:
+                # Scroll para baixo para simular interação
+                self.driver.execute_script("window.scrollTo(0, 500);")
+                time.sleep(2)
+            except:
+                pass
             
             # Extrair cookies do navegador
             cookies = self.driver.get_cookies()
