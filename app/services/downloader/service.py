@@ -392,28 +392,53 @@ class DownloaderService:
             "bot", "sign in", "authentication", "confirm you're not a bot"
         ])
         
-        # Se for erro de bot detection e for YouTube, tentar Selenium como último recurso
-        if is_bot_error and "youtube.com" in video_url:
-            logger.info("yt-dlp failed with bot detection, trying Selenium fallback...")
+        # Se for erro de bot detection, tentar Cobalt primeiro (mais leve), depois Selenium
+        if is_bot_error and ("youtube.com" in video_url or "instagram.com" in video_url or "tiktok.com" in video_url):
+            # Estratégia 1: Tentar Cobalt API (mais rápido e leve)
+            logger.info("yt-dlp failed with bot detection, trying Cobalt API fallback...")
+            cobalt_result = None
             try:
-                from app.services.downloader.selenium_service import SeleniumDownloaderService
-                selenium_service = SeleniumDownloaderService()
-                selenium_result = await selenium_service.download_video(
+                from app.services.downloader.cobalt_service import CobaltDownloaderService
+                cobalt_service = CobaltDownloaderService()
+                cobalt_result = await cobalt_service.download_video(
                     video_url, output_path_abs, external_video_id
                 )
                 
-                if selenium_result.get('status') == 'completed':
-                    logger.info("Selenium fallback succeeded!")
-                    return selenium_result
+                if cobalt_result.get('status') == 'completed':
+                    logger.info("Cobalt fallback succeeded!")
+                    return cobalt_result
                 else:
-                    logger.warning(f"Selenium fallback also failed: {selenium_result.get('error')}")
-                    error_detail += f". Selenium fallback failed: {selenium_result.get('error', 'Unknown error')}"
+                    logger.warning(f"Cobalt fallback failed: {cobalt_result.get('error')}")
+                    error_detail += f". Cobalt fallback failed: {cobalt_result.get('error', 'Unknown error')}"
             except ImportError:
-                logger.warning("Selenium not available, skipping fallback")
-                error_detail += ". Selenium fallback not available (ImportError)"
+                logger.warning("Cobalt service not available, skipping fallback")
+                error_detail += ". Cobalt fallback not available (ImportError)"
             except Exception as e:
-                logger.error(f"Selenium fallback exception: {e}")
-                error_detail += f". Selenium fallback exception: {str(e)}"
+                logger.error(f"Cobalt fallback exception: {e}")
+                error_detail += f". Cobalt fallback exception: {str(e)}"
+            
+            # Estratégia 2: Se Cobalt falhar e for YouTube, tentar Selenium como último recurso
+            if (cobalt_result is None or cobalt_result.get('status') != 'completed') and "youtube.com" in video_url:
+                logger.info("Cobalt failed, trying Selenium as last resort...")
+                try:
+                    from app.services.downloader.selenium_service import SeleniumDownloaderService
+                    selenium_service = SeleniumDownloaderService()
+                    selenium_result = await selenium_service.download_video(
+                        video_url, output_path_abs, external_video_id
+                    )
+                    
+                    if selenium_result.get('status') == 'completed':
+                        logger.info("Selenium fallback succeeded!")
+                        return selenium_result
+                    else:
+                        logger.warning(f"Selenium fallback also failed: {selenium_result.get('error')}")
+                        error_detail += f". Selenium fallback failed: {selenium_result.get('error', 'Unknown error')}"
+                except ImportError:
+                    logger.warning("Selenium not available, skipping fallback")
+                    error_detail += ". Selenium fallback not available (ImportError)"
+                except Exception as e:
+                    logger.error(f"Selenium fallback exception: {e}")
+                    error_detail += f". Selenium fallback exception: {str(e)}"
         
         logger.error(f"Download failed for {external_video_id}: {error_detail}")
         return {"status": "failed", "error": error_detail}
