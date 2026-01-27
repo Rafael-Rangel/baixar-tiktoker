@@ -1,0 +1,30 @@
+# Cobalt API - Serviço de Download de Vídeos
+# Deploy junto com content-orchestrator na mesma VPS
+# 
+# Uso:
+#   1. Copie este arquivo para ~/cobalt/docker-compose.yml
+#   2. cd ~/cobalt
+#   3. docker compose up -d
+#   4. docker network connect root_default cobalt-api
+#   5. Configure COBALT_API_URL=http://cobalt-api:8080 no .env do content-orchestrator
+
+version: '3.8'
+
+services:
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:latest
+    container_name: cobalt-api
+    restart: always
+    ports:
+      - "127.0.0.1:9000:8080"  # Apenas localhost para segurança
+    environment:
+      - API_URL=http://localhost:9000
+    # Opcional: cookies para autenticação melhor
+    # volumes:
+    #   - ./cookies.json:/app/cookies.json
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
