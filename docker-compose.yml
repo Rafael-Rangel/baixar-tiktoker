@@ -17,10 +17,6 @@ services:
       - ./downloads:/content-downloads
       - ./data:/app/data
     ports:
-      - "127.0.0.1:8000:8000"
-    networks:
-      - default
-
-networks:
-  default:
-    driver: bridge
+      - "127.0.0.1:8000:8000"  # Acesso local apenas
+    # Não definir networks aqui - será conectado manualmente à rede do n8n
+    # docker network connect root_default content-orchestrator
