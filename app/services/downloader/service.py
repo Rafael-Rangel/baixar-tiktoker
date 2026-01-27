@@ -392,33 +392,42 @@ class DownloaderService:
             "bot", "sign in", "authentication", "confirm you're not a bot"
         ])
         
-        # Se for erro de bot detection, tentar Cobalt primeiro (mais leve), depois Selenium
-        if is_bot_error and ("youtube.com" in video_url or "instagram.com" in video_url or "tiktok.com" in video_url):
-            # Estratégia 1: Tentar Cobalt API (mais rápido e leve)
-            logger.info("yt-dlp failed with bot detection, trying Cobalt API fallback...")
+        # Se for erro de bot detection, tentar Selenium (Cobalt API pública foi desativada)
+        if is_bot_error and "youtube.com" in video_url:
+            # Nota: Cobalt API v7 foi desativada em nov/2024
+            # Se tiver instância própria do Cobalt configurada, pode tentar
             cobalt_result = None
-            try:
-                from app.services.downloader.cobalt_service import CobaltDownloaderService
-                cobalt_service = CobaltDownloaderService()
-                cobalt_result = await cobalt_service.download_video(
-                    video_url, output_path_abs, external_video_id
-                )
-                
-                if cobalt_result.get('status') == 'completed':
-                    logger.info("Cobalt fallback succeeded!")
-                    return cobalt_result
-                else:
-                    logger.warning(f"Cobalt fallback failed: {cobalt_result.get('error')}")
-                    error_detail += f". Cobalt fallback failed: {cobalt_result.get('error', 'Unknown error')}"
-            except ImportError:
-                logger.warning("Cobalt service not available, skipping fallback")
-                error_detail += ". Cobalt fallback not available (ImportError)"
-            except Exception as e:
-                logger.error(f"Cobalt fallback exception: {e}")
-                error_detail += f". Cobalt fallback exception: {str(e)}"
+            cobalt_available = False
             
-            # Estratégia 2: Se Cobalt falhar e for YouTube, tentar Selenium como último recurso
-            if (cobalt_result is None or cobalt_result.get('status') != 'completed') and "youtube.com" in video_url:
+            # Verificar se Cobalt está configurado (instância própria)
+            try:
+                from app.core.config import get_settings
+                settings = get_settings()
+                if settings.COBALT_API_URL and settings.COBALT_API_URL.strip():
+                    cobalt_available = True
+                    logger.info("yt-dlp failed with bot detection, trying Cobalt API fallback...")
+                    from app.services.downloader.cobalt_service import CobaltDownloaderService
+                    cobalt_service = CobaltDownloaderService()
+                    cobalt_result = await cobalt_service.download_video(
+                        video_url, output_path_abs, external_video_id
+                    )
+                    
+                    if cobalt_result.get('status') == 'completed':
+                        logger.info("Cobalt fallback succeeded!")
+                        return cobalt_result
+                    else:
+                        error_msg = cobalt_result.get('error', 'Unknown error')
+                        # Se erro for de API desativada, não adicionar ao erro detalhado
+                        if 'shut down' not in error_msg.lower() and 'v7 api' not in error_msg.lower():
+                            logger.warning(f"Cobalt fallback failed: {error_msg}")
+                            error_detail += f". Cobalt fallback failed: {error_msg}"
+            except ImportError:
+                logger.debug("Cobalt service not available, skipping")
+            except Exception as e:
+                logger.debug(f"Cobalt fallback exception: {e}")
+            
+            # Estratégia principal: Tentar Selenium (sempre disponível para YouTube)
+            if not cobalt_available or (cobalt_result and cobalt_result.get('status') != 'completed'):
                 logger.info("Cobalt failed, trying Selenium as last resort...")
                 try:
                     from app.services.downloader.selenium_service import SeleniumDownloaderService
