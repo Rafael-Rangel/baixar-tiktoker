@@ -440,7 +440,7 @@ class SeleniumDownloaderService:
             # Tentar múltiplas estratégias com os cookies do navegador
             strategies = [
                 {
-                    "name": "bestvideo+bestaudio",
+                    "name": "bestvideo+bestaudio (web client)",
                     "opts": {
                         "cookiefile": cookies_file,
                         "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
@@ -451,7 +451,7 @@ class SeleniumDownloaderService:
                         "noplaylist": True,
                         "extractor_args": {
                             "youtube": {
-                                "player_client": ["ios", "android", "mweb", "web"]
+                                "player_client": ["web"]
                             }
                         },
                         "referer": "https://www.youtube.com/",
@@ -467,7 +467,26 @@ class SeleniumDownloaderService:
                     }
                 },
                 {
-                    "name": "best format",
+                    "name": "bestvideo+bestaudio (ios client)",
+                    "opts": {
+                        "cookiefile": cookies_file,
+                        "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
+                        "format": "bestvideo+bestaudio/best",
+                        "merge_output_format": "mp4",
+                        "quiet": True,
+                        "no_warnings": True,
+                        "noplaylist": True,
+                        "extractor_args": {
+                            "youtube": {
+                                "player_client": ["ios"]
+                            }
+                        },
+                        "referer": "https://www.youtube.com/",
+                        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                    }
+                },
+                {
+                    "name": "best format (android)",
                     "opts": {
                         "cookiefile": cookies_file,
                         "outtmpl": output_path_abs.replace(".mp4", ".%(ext)s"),
@@ -477,11 +496,11 @@ class SeleniumDownloaderService:
                         "noplaylist": True,
                         "extractor_args": {
                             "youtube": {
-                                "player_client": ["ios", "android"]
+                                "player_client": ["android"]
                             }
                         },
                         "referer": "https://www.youtube.com/",
-                        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                        "user_agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                     }
                 },
                 {
