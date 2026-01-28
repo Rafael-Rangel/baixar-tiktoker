@@ -253,12 +253,26 @@ class YouTubeAPIDownloaderService:
             if not player_data:
                 return {"status": "failed", "error": "Could not extract player data from page"}
             
+            # Verificar playabilityStatus primeiro
+            playability = player_data.get("playabilityStatus", {})
+            status = playability.get("status", "")
+            
+            if status == "ERROR" or status == "LOGIN_REQUIRED":
+                reason = playability.get("reason", "")
+                logger.warning(f"YouTube API: Video not playable: {status} - {reason}")
+                return {"status": "failed", "error": f"Video not playable: {reason or status}"}
+            
             # Extrair streamingData
             streaming_data = player_data.get("streamingData", {})
             formats = streaming_data.get("formats", [])
             adaptive_formats = streaming_data.get("adaptiveFormats", [])
             
             if not formats and not adaptive_formats:
+                logger.warning("YouTube API: No streamingData found in player_response")
+                # Tentar procurar em videoDetails ou outros campos
+                video_details = player_data.get("videoDetails", {})
+                if video_details:
+                    logger.info(f"YouTube API: Found videoDetails: {video_details.get('title', 'Unknown')}")
                 return {"status": "failed", "error": "No streaming data in player_response"}
             
             # Encontrar melhor formato

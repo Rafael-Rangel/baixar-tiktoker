@@ -83,10 +83,16 @@ class CDPDownloaderService:
         audio_urls = []
         
         try:
-            # Obter logs de performance
-            logs = driver.get_log('performance')
+            # Obter logs de performance (múltiplas vezes para capturar todas as requisições)
+            all_logs = []
+            for _ in range(3):  # Tentar 3 vezes com pequeno delay
+                logs = driver.get_log('performance')
+                all_logs.extend(logs)
+                time.sleep(0.5)
             
-            for log in logs:
+            seen_urls = set()
+            
+            for log in all_logs:
                 try:
                     message = json.loads(log['message'])
                     method = message.get('message', {}).get('method', '')
@@ -99,25 +105,30 @@ class CDPDownloaderService:
                         mime_type = response.get('mimeType', '')
                         
                         # Procurar por URLs de streaming do YouTube
-                        if 'googlevideo.com' in url:
-                            if 'videoplayback' in url:
-                                # Verificar se é vídeo ou áudio
-                                if 'mime=video' in url or 'itag=' in url:
-                                    # Extrair itag para determinar qualidade
-                                    itag_match = re.search(r'itag=(\d+)', url)
-                                    if itag_match:
-                                        itag = int(itag_match.group(1))
-                                        # Itags de vídeo: 18, 22, 37, 38, 43, 44, 45, 46, 135-140, 242-248, 271-278
-                                        # Itags de áudio: 139, 140, 141, 171, 249-251
-                                        if itag in [139, 140, 141, 171, 249, 250, 251]:
-                                            if url not in audio_urls:
-                                                audio_urls.append(url)
-                                        else:
-                                            if url not in video_urls:
-                                                video_urls.append(url)
-                                elif 'mime=audio' in url:
-                                    if url not in audio_urls:
+                        if 'googlevideo.com' in url and 'videoplayback' in url:
+                            if url in seen_urls:
+                                continue
+                            seen_urls.add(url)
+                            
+                            # Verificar se é vídeo ou áudio
+                            if 'mime=video' in url or ('itag=' in url and 'mime=audio' not in url):
+                                # Extrair itag para determinar qualidade
+                                itag_match = re.search(r'itag=(\d+)', url)
+                                if itag_match:
+                                    itag = int(itag_match.group(1))
+                                    # Itags de áudio: 139, 140, 141, 171, 249-251
+                                    if itag in [139, 140, 141, 171, 249, 250, 251]:
                                         audio_urls.append(url)
+                                    else:
+                                        video_urls.append(url)
+                                else:
+                                    video_urls.append(url)
+                            elif 'mime=audio' in url:
+                                audio_urls.append(url)
+                            elif mime_type.startswith('video/'):
+                                video_urls.append(url)
+                            elif mime_type.startswith('audio/'):
+                                audio_urls.append(url)
                     
                     # Interceptar requisições de rede também
                     elif method == 'Network.requestWillBeSent':
@@ -125,17 +136,27 @@ class CDPDownloaderService:
                         url = request.get('url', '')
                         
                         if 'googlevideo.com' in url and 'videoplayback' in url:
+                            if url in seen_urls:
+                                continue
+                            seen_urls.add(url)
+                            
                             if 'mime=video' in url or ('itag=' in url and 'mime=audio' not in url):
-                                if url not in video_urls:
+                                itag_match = re.search(r'itag=(\d+)', url)
+                                if itag_match:
+                                    itag = int(itag_match.group(1))
+                                    if itag in [139, 140, 141, 171, 249, 250, 251]:
+                                        audio_urls.append(url)
+                                    else:
+                                        video_urls.append(url)
+                                else:
                                     video_urls.append(url)
                             elif 'mime=audio' in url:
-                                if url not in audio_urls:
-                                    audio_urls.append(url)
+                                audio_urls.append(url)
                 
                 except (json.JSONDecodeError, KeyError, ValueError) as e:
                     continue
             
-            logger.info(f"CDP: Found {len(video_urls)} video URLs and {len(audio_urls)} audio URLs")
+            logger.info(f"CDP: Found {len(video_urls)} video URLs and {len(audio_urls)} audio URLs from logs")
             
         except Exception as e:
             logger.warning(f"CDP: Error extracting URLs from logs: {e}")
@@ -150,11 +171,13 @@ class CDPDownloaderService:
         try:
             page_source = driver.page_source
             
-            # Procurar por player_response no HTML
+            # Procurar por player_response no HTML (múltiplos padrões)
             patterns = [
                 r'var ytInitialPlayerResponse = ({.+?});',
                 r'ytInitialPlayerResponse\s*=\s*({.+?});',
                 r'"playerResponse":\s*({.+?})',
+                r'ytInitialPlayerResponse\s*=\s*({.+?});\s*var',
+                r'window\["ytInitialPlayerResponse"\]\s*=\s*({.+?});',
             ]
             
             player_data = None
@@ -163,6 +186,7 @@ class CDPDownloaderService:
                 if match:
                     try:
                         player_data = json.loads(match.group(1))
+                        logger.info("CDP: Found player_response in HTML")
                         break
                     except json.JSONDecodeError:
                         continue
@@ -174,27 +198,53 @@ class CDPDownloaderService:
                 adaptive_formats = streaming_data.get('adaptiveFormats', [])
                 
                 all_formats = formats + adaptive_formats
+                logger.info(f"CDP: Found {len(all_formats)} formats in streamingData")
                 
                 for fmt in all_formats:
-                    url = fmt.get('url') or fmt.get('signatureCipher', '')
+                    url = fmt.get('url')
+                    signature_cipher = fmt.get('signatureCipher', '')
                     mime_type = fmt.get('mimeType', '')
                     itag = fmt.get('itag', 0)
                     
+                    # Se tiver signatureCipher, tentar extrair URL dele
+                    if signature_cipher and not url:
+                        # signatureCipher tem formato: "url=...&sig=..."
+                        url_match = re.search(r'url=([^&]+)', signature_cipher)
+                        if url_match:
+                            import urllib.parse
+                            url = urllib.parse.unquote(url_match.group(1))
+                    
                     if url and 'googlevideo.com' in url:
                         if mime_type.startswith('video/'):
-                            if url not in video_urls:
-                                video_urls.append(url)
+                            video_urls.append(url)
                         elif mime_type.startswith('audio/'):
-                            if url not in audio_urls:
-                                audio_urls.append(url)
+                            audio_urls.append(url)
                         elif itag:
                             # Classificar por itag se mimeType não estiver disponível
                             if itag in [139, 140, 141, 171, 249, 250, 251]:
-                                if url not in audio_urls:
-                                    audio_urls.append(url)
+                                audio_urls.append(url)
                             else:
-                                if url not in video_urls:
-                                    video_urls.append(url)
+                                video_urls.append(url)
+                        else:
+                            # Se não tem mimeType nem itag, assumir vídeo
+                            video_urls.append(url)
+            
+            # Procurar também por URLs diretas no HTML (fallback)
+            direct_url_patterns = [
+                r'https://[^"\'\\s]+googlevideo\.com[^"\'\\s]+videoplayback[^"\'\\s]+',
+                r'"url"\s*:\s*"([^"]+googlevideo\.com[^"]+videoplayback[^"]+)"',
+            ]
+            
+            for pattern in direct_url_patterns:
+                matches = re.findall(pattern, page_source)
+                for match_url in matches:
+                    if isinstance(match_url, tuple):
+                        match_url = match_url[0] if match_url else ''
+                    if match_url and 'googlevideo.com' in match_url:
+                        if 'mime=audio' in match_url:
+                            audio_urls.append(match_url)
+                        else:
+                            video_urls.append(match_url)
             
             logger.info(f"CDP: Extracted {len(video_urls)} video URLs and {len(audio_urls)} audio URLs from page source")
             
@@ -401,24 +451,61 @@ class CDPDownloaderService:
             self.driver.get(video_url)
             
             # Aguardar página carregar
+            video_element = None
             try:
                 WebDriverWait(self.driver, 30).until(
                     EC.presence_of_element_located((By.TAG_NAME, "video"))
                 )
                 logger.info("CDP: Video element found")
+                video_element = self.driver.find_element(By.TAG_NAME, "video")
             except TimeoutException:
                 logger.warning("CDP: Video element not found, but continuing...")
             
-            # Aguardar mais tempo para requisições de rede serem feitas
-            time.sleep(10)
+            # Aguardar página carregar completamente
+            time.sleep(5)
             
-            # Simular interações
-            try:
-                video_element = self.driver.find_element(By.TAG_NAME, "video")
-                self.driver.execute_script("arguments[0].play();", video_element)
-                time.sleep(5)
-            except:
-                pass
+            # Forçar reprodução do vídeo para gerar requisições de streaming
+            if video_element:
+                try:
+                    logger.info("CDP: Attempting to play video to trigger streaming requests")
+                    # Múltiplas tentativas de reproduzir
+                    self.driver.execute_script("""
+                        var video = document.querySelector('video');
+                        if (video) {
+                            video.muted = true;
+                            video.play().catch(function(e) {
+                                console.log('Play failed:', e);
+                            });
+                        }
+                    """)
+                    time.sleep(2)
+                    
+                    # Tentar clicar no vídeo também
+                    try:
+                        video_element.click()
+                    except:
+                        pass
+                    
+                    # Aguardar vídeo começar a reproduzir e fazer requisições
+                    logger.info("CDP: Waiting for video to start playing and generate network requests")
+                    time.sleep(15)  # Aguardar mais tempo para streaming começar
+                    
+                    # Verificar se vídeo está reproduzindo
+                    is_playing = self.driver.execute_script("""
+                        var video = document.querySelector('video');
+                        return video && !video.paused && video.readyState >= 2;
+                    """)
+                    logger.info(f"CDP: Video playing status: {is_playing}")
+                    
+                    # Aguardar mais um pouco para garantir que requisições foram feitas
+                    time.sleep(10)
+                    
+                except Exception as e:
+                    logger.warning(f"CDP: Error trying to play video: {e}")
+            else:
+                # Se não encontrou elemento de vídeo, aguardar mesmo assim
+                logger.warning("CDP: No video element found, waiting anyway")
+                time.sleep(20)
             
             # Extrair URLs de duas formas
             urls_from_logs = self._extract_streaming_urls_from_logs(self.driver)
