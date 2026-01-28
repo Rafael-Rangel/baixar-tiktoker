@@ -36,19 +36,52 @@ class PytubefixDownloaderService:
             output_dir = os.path.dirname(output_path_abs)
             os.makedirs(output_dir, exist_ok=True)
             
-            # Criar instância do YouTube
-            yt = YouTube(video_url)
+            # Criar instância do YouTube com configurações avançadas para evitar detecção
+            # use_oauth=True e allow_oauth_cache=True podem ajudar a contornar bloqueios
+            try:
+                yt = YouTube(
+                    video_url,
+                    use_oauth=False,  # Tentar sem OAuth primeiro
+                    allow_oauth_cache=True
+                )
+            except Exception as e:
+                logger.warning(f"Pytubefix: Error creating YouTube instance, trying without OAuth: {e}")
+                # Tentar sem configurações especiais
+                yt = YouTube(video_url)
             
             # Obter stream de maior qualidade disponível
+            # Tentar múltiplas estratégias em ordem de preferência
+            stream = None
+            
             try:
+                # Estratégia 1: Maior resolução disponível
                 stream = yt.streams.get_highest_resolution()
+                logger.info("Pytubefix: Got highest resolution stream")
             except Exception as e:
-                logger.warning(f"Pytubefix: Could not get highest resolution, trying progressive: {e}")
-                # Tentar streams progressivos (vídeo+áudio juntos)
-                streams = yt.streams.filter(progressive=True)
-                if streams:
-                    stream = streams.order_by('resolution').desc().first()
-                else:
+                logger.warning(f"Pytubefix: Could not get highest resolution: {e}")
+                
+                # Estratégia 2: Streams progressivos (vídeo+áudio juntos)
+                try:
+                    streams = yt.streams.filter(progressive=True)
+                    if streams:
+                        stream = streams.order_by('resolution').desc().first()
+                        logger.info("Pytubefix: Got progressive stream")
+                except Exception as e2:
+                    logger.warning(f"Pytubefix: Could not get progressive streams: {e2}")
+            
+            if not stream:
+                # Estratégia 3: Qualquer stream disponível (último recurso)
+                try:
+                    all_streams = yt.streams.filter(file_extension='mp4')
+                    if all_streams:
+                        stream = all_streams.order_by('resolution').desc().first()
+                        logger.info("Pytubefix: Got any available MP4 stream")
+                except Exception as e3:
+                    logger.warning(f"Pytubefix: Could not get any MP4 stream: {e3}")
+            
+            if not stream:
+                # Estratégia 4: Tentar vídeo e áudio separados
+                try:
                     # Se não houver progressivo, pegar melhor vídeo e melhor áudio separadamente
                     video_stream = yt.streams.filter(only_video=True).order_by('resolution').desc().first()
                     audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
