@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from app.core.config import get_settings
 from app.core.logging import setup_logging
-from app.api.routes import fetch, select, download, confirm, health, n8n
+from app.api.routes import fetch, select, download, confirm, health, n8n, test_download
 
 setup_logging()
 settings = get_settings()
@@ -18,6 +18,7 @@ app.include_router(fetch.router, prefix=f"{settings.API_V1_STR}/fetch", tags=["F
 app.include_router(select.router, prefix=f"{settings.API_V1_STR}/select", tags=["Select"])
 app.include_router(download.router, prefix=f"{settings.API_V1_STR}/download", tags=["Download"])
 app.include_router(confirm.router, prefix=f"{settings.API_V1_STR}/confirm_publish", tags=["Confirm"])
+app.include_router(test_download.router, prefix=f"{settings.API_V1_STR}/test-download", tags=["Test"])
 app.include_router(health.router, tags=["Health"])
 
 @app.get("/", response_class=HTMLResponse)

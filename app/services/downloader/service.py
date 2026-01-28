@@ -392,19 +392,59 @@ class DownloaderService:
             "bot", "sign in", "authentication", "confirm you're not a bot"
         ])
         
-        # Se for erro de bot detection, tentar Cobalt primeiro (se configurado), depois Selenium
+        # Se for erro de bot detection, tentar múltiplas estratégias em ordem (rápido → lento)
         if is_bot_error and ("youtube.com" in video_url or "instagram.com" in video_url or "tiktok.com" in video_url):
+            # ESTRATÉGIA 1: pytubefix (rápido, alternativa ao yt-dlp)
+            if "youtube.com" in video_url:
+                logger.info("yt-dlp failed with bot detection, trying pytubefix...")
+                try:
+                    from app.services.downloader.pytubefix_service import PytubefixDownloaderService
+                    pytubefix_service = PytubefixDownloaderService()
+                    pytubefix_result = await pytubefix_service.download_video(
+                        video_url, output_path_abs, external_video_id
+                    )
+                    
+                    if pytubefix_result.get('status') == 'completed':
+                        logger.info("pytubefix fallback succeeded!")
+                        return pytubefix_result
+                    else:
+                        logger.warning(f"pytubefix fallback failed: {pytubefix_result.get('error')}")
+                        error_detail += f". pytubefix failed: {pytubefix_result.get('error', 'Unknown error')[:100]}"
+                except ImportError:
+                    logger.debug("pytubefix not available, skipping")
+                except Exception as e:
+                    logger.debug(f"pytubefix exception: {e}")
+            
+            # ESTRATÉGIA 2: YouTube Player API direto (contorna yt-dlp completamente)
+            if "youtube.com" in video_url:
+                logger.info("Trying YouTube Player API direct download...")
+                try:
+                    from app.services.downloader.youtube_api_service import YouTubeAPIDownloaderService
+                    api_service = YouTubeAPIDownloaderService()
+                    api_result = await api_service.download_video(
+                        video_url, output_path_abs, external_video_id
+                    )
+                    
+                    if api_result.get('status') == 'completed':
+                        logger.info("YouTube API direct download succeeded!")
+                        return api_result
+                    else:
+                        logger.warning(f"YouTube API direct failed: {api_result.get('error')}")
+                        error_detail += f". YouTube API failed: {api_result.get('error', 'Unknown error')[:100]}"
+                except ImportError:
+                    logger.debug("YouTube API service not available, skipping")
+                except Exception as e:
+                    logger.debug(f"YouTube API exception: {e}")
+            
+            # ESTRATÉGIA 3: Cobalt API (se configurado)
             cobalt_result = None
             cobalt_tried = False
-            
-            # Estratégia 1: Tentar Cobalt API primeiro (mais rápido e leve)
-            # Nota: API pública foi desativada, mas pode usar instância própria
             try:
                 from app.core.config import get_settings
                 settings = get_settings()
                 if settings.COBALT_API_URL and settings.COBALT_API_URL.strip():
                     cobalt_tried = True
-                    logger.info("yt-dlp failed with bot detection, trying Cobalt API fallback...")
+                    logger.info("Trying Cobalt API fallback...")
                     from app.services.downloader.cobalt_service import CobaltDownloaderService
                     cobalt_service = CobaltDownloaderService()
                     cobalt_result = await cobalt_service.download_video(
@@ -416,20 +456,17 @@ class DownloaderService:
                         return cobalt_result
                     else:
                         error_msg = cobalt_result.get('error', 'Unknown error')
-                        # Se erro for de API desativada, não adicionar ao erro detalhado
                         if 'shut down' not in error_msg.lower() and 'v7 api' not in error_msg.lower():
                             logger.warning(f"Cobalt fallback failed: {error_msg}")
-                            error_detail += f". Cobalt fallback failed: {error_msg}"
-                        else:
-                            logger.info("Cobalt API pública desativada, pulando para Selenium")
+                            error_detail += f". Cobalt failed: {error_msg[:100]}"
             except ImportError:
                 logger.debug("Cobalt service not available, skipping")
             except Exception as e:
                 logger.debug(f"Cobalt fallback exception: {e}")
             
-            # Estratégia 2: Se Cobalt não foi tentado ou falhou, tentar Selenium (sempre disponível para YouTube)
-            if (not cobalt_tried or (cobalt_result and cobalt_result.get('status') != 'completed')) and "youtube.com" in video_url:
-                logger.info("Cobalt failed, trying Selenium as last resort...")
+            # ESTRATÉGIA 4: Selenium (último recurso, mais lento mas mais robusto)
+            if "youtube.com" in video_url:
+                logger.info("Trying Selenium as last resort...")
                 try:
                     from app.services.downloader.selenium_service import SeleniumDownloaderService
                     selenium_service = SeleniumDownloaderService()
@@ -442,13 +479,13 @@ class DownloaderService:
                         return selenium_result
                     else:
                         logger.warning(f"Selenium fallback also failed: {selenium_result.get('error')}")
-                        error_detail += f". Selenium fallback failed: {selenium_result.get('error', 'Unknown error')}"
+                        error_detail += f". Selenium failed: {selenium_result.get('error', 'Unknown error')[:100]}"
                 except ImportError:
                     logger.warning("Selenium not available, skipping fallback")
-                    error_detail += ". Selenium fallback not available (ImportError)"
+                    error_detail += ". Selenium not available (ImportError)"
                 except Exception as e:
                     logger.error(f"Selenium fallback exception: {e}")
-                    error_detail += f". Selenium fallback exception: {str(e)}"
+                    error_detail += f". Selenium exception: {str(e)[:100]}"
         
         logger.error(f"Download failed for {external_video_id}: {error_detail}")
         return {"status": "failed", "error": error_detail}
