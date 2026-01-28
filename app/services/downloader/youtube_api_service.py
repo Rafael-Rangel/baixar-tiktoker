@@ -209,29 +209,152 @@ class YouTubeAPIDownloaderService:
             return {"status": "failed", "error": f"YouTube API download failed: {str(e)}"}
     
     async def _download_from_page(self, client: httpx.AsyncClient, video_url: str, output_path: str, video_id: str) -> dict:
-        """Método alternativo: extrair URL da página HTML"""
+        """Método alternativo: extrair URL da página HTML e fazer download direto"""
         try:
             logger.info("YouTube API: Trying to extract from page HTML")
             
-            # Baixar página HTML
-            response = await client.get(video_url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
+            # Baixar página HTML com headers completos
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate",
+                "Referer": "https://www.youtube.com/",
+                "DNT": "1",
+                "Connection": "keep-alive",
+            }
+            
+            response = await client.get(video_url, headers=headers)
             
             if response.status_code != 200:
                 return {"status": "failed", "error": f"Page request failed: {response.status_code}"}
             
-            # Procurar por player_response no HTML
+            # Procurar por player_response no HTML (múltiplos padrões)
             html = response.text
-            match = re.search(r'var ytInitialPlayerResponse = ({.+?});', html)
-            if match:
-                player_data = json.loads(match.group(1))
-                # Usar mesmo processo de extração acima
-                # Por enquanto, retornar erro para usar outras estratégias
-                return {"status": "failed", "error": "Page extraction not fully implemented, use other strategies"}
             
-            return {"status": "failed", "error": "Could not extract player data from page"}
+            player_data = None
+            patterns = [
+                r'var ytInitialPlayerResponse = ({.+?});',
+                r'ytInitialPlayerResponse\s*=\s*({.+?});',
+                r'"playerResponse":\s*({.+?})',
+                r'ytInitialPlayerResponse\s*=\s*({.+?});\s*var',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, html, re.DOTALL)
+                if match:
+                    try:
+                        player_data = json.loads(match.group(1))
+                        logger.info("YouTube API: Found player_response in HTML")
+                        break
+                    except json.JSONDecodeError:
+                        continue
+            
+            if not player_data:
+                return {"status": "failed", "error": "Could not extract player data from page"}
+            
+            # Extrair streamingData
+            streaming_data = player_data.get("streamingData", {})
+            formats = streaming_data.get("formats", [])
+            adaptive_formats = streaming_data.get("adaptiveFormats", [])
+            
+            if not formats and not adaptive_formats:
+                return {"status": "failed", "error": "No streaming data in player_response"}
+            
+            # Encontrar melhor formato
+            best_video = None
+            best_audio = None
+            
+            # Procurar vídeo progressivo
+            for fmt in formats:
+                if fmt.get("mimeType", "").startswith("video/"):
+                    if not best_video or int(fmt.get("width", 0)) > int(best_video.get("width", 0)):
+                        best_video = fmt
+            
+            # Se não houver progressivo, procurar adaptativo
+            if not best_video:
+                for fmt in adaptive_formats:
+                    mime = fmt.get("mimeType", "")
+                    if mime.startswith("video/"):
+                        if not best_video or int(fmt.get("width", 0)) > int(best_video.get("width", 0)):
+                            best_video = fmt
+                    elif mime.startswith("audio/"):
+                        if not best_audio or int(fmt.get("bitrate", 0)) > int(best_audio.get("bitrate", 0)):
+                            best_audio = fmt
+            
+            if not best_video:
+                return {"status": "failed", "error": "No video format found"}
+            
+            video_url_download = best_video.get("url")
+            if not video_url_download:
+                # Se tiver signatureCipher, não podemos decodificar facilmente
+                if "signatureCipher" in str(best_video):
+                    return {"status": "failed", "error": "Signature cipher detected, use CDP or Selenium"}
+                return {"status": "failed", "error": "No video URL found"}
+            
+            # Baixar vídeo
+            output_path_abs = os.path.abspath(output_path)
+            output_dir = os.path.dirname(output_path_abs)
+            os.makedirs(output_dir, exist_ok=True)
+            
+            if best_audio:
+                # Baixar vídeo e áudio separadamente
+                video_path = os.path.join(output_dir, f"{video_id}_video.mp4")
+                audio_path = os.path.join(output_dir, f"{video_id}_audio.m4a")
+                
+                logger.info("YouTube API: Downloading video and audio separately from HTML")
+                
+                # Baixar vídeo
+                async with client.stream("GET", video_url_download, headers=headers) as resp:
+                    if resp.status_code == 200:
+                        with open(video_path, "wb") as f:
+                            async for chunk in resp.aiter_bytes():
+                                f.write(chunk)
+                
+                # Baixar áudio
+                audio_url = best_audio.get("url")
+                if audio_url:
+                    async with client.stream("GET", audio_url, headers=headers) as resp:
+                        if resp.status_code == 200:
+                            with open(audio_path, "wb") as f:
+                                async for chunk in resp.aiter_bytes():
+                                    f.write(chunk)
+                
+                # Fazer merge
+                logger.info("YouTube API: Merging video and audio")
+                merge_cmd = [
+                    "ffmpeg", "-y", "-i", video_path, "-i", audio_path,
+                    "-c:v", "copy", "-c:a", "copy", output_path_abs
+                ]
+                result = subprocess.run(merge_cmd, capture_output=True, text=True, timeout=300)
+                
+                # Limpar temporários
+                for p in [video_path, audio_path]:
+                    try:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except:
+                        pass
+                
+                if result.returncode == 0 and os.path.exists(output_path_abs) and os.path.getsize(output_path_abs) > 1000:
+                    logger.info(f"YouTube API: Download successful from HTML! File size: {os.path.getsize(output_path_abs)} bytes")
+                    return {"status": "completed", "path": output_path_abs}
+            else:
+                # Apenas vídeo
+                async with client.stream("GET", video_url_download, headers=headers) as resp:
+                    if resp.status_code == 200:
+                        with open(output_path_abs, "wb") as f:
+                            async for chunk in resp.aiter_bytes():
+                                f.write(chunk)
+                        
+                        if os.path.exists(output_path_abs) and os.path.getsize(output_path_abs) > 1000:
+                            logger.info(f"YouTube API: Download successful from HTML! File size: {os.path.getsize(output_path_abs)} bytes")
+                            return {"status": "completed", "path": output_path_abs}
+            
+            return {"status": "failed", "error": "Download failed"}
             
         except Exception as e:
             logger.error(f"YouTube API: Page extraction failed: {e}")
+            import traceback
+            logger.error(f"YouTube API: Traceback: {traceback.format_exc()}")
             return {"status": "failed", "error": f"Page extraction failed: {str(e)}"}

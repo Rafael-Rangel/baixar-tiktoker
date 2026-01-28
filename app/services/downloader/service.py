@@ -464,7 +464,28 @@ class DownloaderService:
             except Exception as e:
                 logger.debug(f"Cobalt fallback exception: {e}")
             
-            # ESTRATÉGIA 4: Selenium (último recurso, mais lento mas mais robusto)
+            # ESTRATÉGIA 4: Chrome DevTools Protocol (CDP) - Intercepta requisições de rede
+            if "youtube.com" in video_url:
+                logger.info("Trying Chrome DevTools Protocol (CDP) for network interception...")
+                try:
+                    from app.services.downloader.cdp_service import CDPDownloaderService
+                    cdp_service = CDPDownloaderService()
+                    cdp_result = await cdp_service.download_video(
+                        video_url, output_path_abs, external_video_id
+                    )
+                    
+                    if cdp_result.get('status') == 'completed':
+                        logger.info("CDP fallback succeeded!")
+                        return cdp_result
+                    else:
+                        logger.warning(f"CDP fallback failed: {cdp_result.get('error')}")
+                        error_detail += f". CDP failed: {cdp_result.get('error', 'Unknown error')[:100]}"
+                except ImportError:
+                    logger.debug("CDP service not available, skipping")
+                except Exception as e:
+                    logger.debug(f"CDP fallback exception: {e}")
+            
+            # ESTRATÉGIA 5: Selenium (último recurso, mais lento mas mais robusto)
             if "youtube.com" in video_url:
                 logger.info("Trying Selenium as last resort...")
                 try:

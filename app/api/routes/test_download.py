@@ -231,8 +231,46 @@ async def test_download(request: TestDownloadRequest):
             "error": str(e)[:200]
         })
     
-    # ESTRATÉGIA 5: Selenium download direto (se implementado)
-    # Por enquanto, pular para Selenium + yt-dlp
+    # ESTRATÉGIA 5: Chrome DevTools Protocol (CDP) - Intercepta requisições de rede
+    logger.info("Test: Trying Chrome DevTools Protocol (CDP)")
+    strategy_start = time.time()
+    try:
+        from app.services.downloader.cdp_service import CDPDownloaderService
+        cdp_service = CDPDownloaderService()
+        result = await cdp_service.download_video(
+            request.video_url, test_output, request.external_video_id
+        )
+        
+        elapsed = time.time() - strategy_start
+        if result.get('status') == 'completed':
+            attempts.append({
+                "strategy": "cdp-network-interception",
+                "status": "success",
+                "time": round(elapsed, 2),
+                "file_size": os.path.getsize(result['path']) if os.path.exists(result['path']) else 0
+            })
+            return {
+                "status": "success",
+                "strategy_used": "cdp-network-interception",
+                "time_taken": round(time.time() - start_time, 2),
+                "file_path": result['path'],
+                "attempts": attempts
+            }
+        else:
+            attempts.append({
+                "strategy": "cdp-network-interception",
+                "status": "failed",
+                "time": round(elapsed, 2),
+                "error": result.get('error', 'Unknown error')[:200]
+            })
+    except Exception as e:
+        elapsed = time.time() - strategy_start
+        attempts.append({
+            "strategy": "cdp-network-interception",
+            "status": "failed",
+            "time": round(elapsed, 2),
+            "error": str(e)[:200]
+        })
     
     # ESTRATÉGIA 6: Selenium + yt-dlp
     logger.info("Test: Trying Selenium + yt-dlp")
