@@ -309,8 +309,20 @@ class CDPDownloaderService:
             logger.warning(f"CDP: Failed to load cookies: {e}")
             return False
     
-    def _download_direct_sync(self, video_url: str, audio_url: Optional[str], output_path: str) -> bool:
-        """Faz download direto das URLs capturadas (método síncrono)"""
+    def _get_browser_cookies_dict(self, driver: webdriver.Chrome) -> dict:
+        """Extrai cookies do navegador e converte para dict para httpx"""
+        cookies_dict = {}
+        try:
+            cookies = driver.get_cookies()
+            for cookie in cookies:
+                cookies_dict[cookie['name']] = cookie['value']
+            logger.info(f"CDP: Extracted {len(cookies_dict)} cookies for HTTP requests")
+        except Exception as e:
+            logger.warning(f"CDP: Failed to extract cookies: {e}")
+        return cookies_dict
+    
+    def _download_direct_sync(self, video_url: str, audio_url: Optional[str], output_path: str, driver: Optional[webdriver.Chrome] = None) -> bool:
+        """Faz download direto das URLs capturadas usando cookies do navegador"""
         try:
             if not video_url:
                 return False
@@ -319,12 +331,24 @@ class CDPDownloaderService:
             output_dir = os.path.dirname(output_path_abs)
             os.makedirs(output_dir, exist_ok=True)
             
+            # Extrair cookies do navegador se disponível
+            cookies_dict = {}
+            if driver:
+                cookies_dict = self._get_browser_cookies_dict(driver)
+            
+            # Headers completos para parecer requisição do navegador
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                 "Accept": "*/*",
-                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
                 "Referer": "https://www.youtube.com/",
                 "Origin": "https://www.youtube.com",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "cross-site",
+                "DNT": "1",
+                "Connection": "keep-alive",
             }
             
             if audio_url:
@@ -336,8 +360,17 @@ class CDPDownloaderService:
                 
                 async def download_file(url: str, path: str):
                     try:
-                        async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-                            async with client.stream("GET", url, headers=headers) as response:
+                        # Criar cliente com cookies
+                        client_kwargs = {
+                            "timeout": 300.0,
+                            "follow_redirects": True,
+                            "headers": headers,
+                        }
+                        if cookies_dict:
+                            client_kwargs["cookies"] = cookies_dict
+                        
+                        async with httpx.AsyncClient(**client_kwargs) as client:
+                            async with client.stream("GET", url) as response:
                                 if response.status_code == 200:
                                     with open(path, "wb") as f:
                                         async for chunk in response.aiter_bytes():
@@ -394,8 +427,17 @@ class CDPDownloaderService:
                 import asyncio
                 async def download():
                     try:
-                        async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-                            async with client.stream("GET", video_url, headers=headers) as response:
+                        # Criar cliente com cookies
+                        client_kwargs = {
+                            "timeout": 300.0,
+                            "follow_redirects": True,
+                            "headers": headers,
+                        }
+                        if cookies_dict:
+                            client_kwargs["cookies"] = cookies_dict
+                        
+                        async with httpx.AsyncClient(**client_kwargs) as client:
+                            async with client.stream("GET", video_url) as response:
                                 if response.status_code == 200:
                                     with open(output_path_abs, "wb") as f:
                                         async for chunk in response.aiter_bytes():
@@ -536,13 +578,19 @@ class CDPDownloaderService:
                 return {"status": "failed", "error": "No video URLs found"}
             
             # Tentar fazer download com cada URL até uma funcionar
-            best_video_url = unique_video_urls[0]  # Pegar a primeira (geralmente melhor qualidade)
-            best_audio_url = unique_audio_urls[0] if unique_audio_urls else None
+            # Tentar todas as URLs capturadas até uma funcionar
+            for video_url_attempt in unique_video_urls:
+                best_audio_url = unique_audio_urls[0] if unique_audio_urls else None
+                
+                logger.info(f"CDP: Attempting download with URL (itag={self._extract_itag_from_url(video_url_attempt)})")
+                
+                # Tentar download direto com cookies do navegador
+                if self._download_direct_sync(video_url_attempt, best_audio_url, output_path, self.driver):
+                    return {"status": "completed", "path": os.path.abspath(output_path)}
+                else:
+                    logger.warning(f"CDP: Download failed for URL, trying next...")
             
-            # Tentar download direto
-            if self._download_direct_sync(best_video_url, best_audio_url, output_path):
-                return {"status": "completed", "path": os.path.abspath(output_path)}
-            
+            # Se nenhuma URL funcionou
             return {"status": "failed", "error": "Direct download failed for all URLs"}
             
         except Exception as e:
@@ -557,6 +605,14 @@ class CDPDownloaderService:
                 except:
                     pass
                 self.driver = None
+    
+    def _extract_itag_from_url(self, url: str) -> Optional[str]:
+        """Extrai itag da URL para logging"""
+        try:
+            match = re.search(r'itag=(\d+)', url)
+            return match.group(1) if match else None
+        except:
+            return None
     
     async def download_video(
         self,
