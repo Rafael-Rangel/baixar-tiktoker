@@ -1,3 +1,4 @@
+# Cache Python
 __pycache__
 *.pyc
 *.pyo
@@ -8,24 +9,36 @@ __pycache__
 *.egg-info
 dist
 build
+
+# Arquivos grandes
 downloads/
 *.mp4
 *.webm
 *.mkv
+
+# Configuração local
 .env
 .git
 .gitignore
-README*.md
-*.md
-!requirements.txt
 .vscode
 .idea
+
+# Ambiente virtual (não precisa no container)
 venv/
+
+# Scripts e documentação (não precisa no container)
+*.md
+*.sh
 *.txt
 !requirements.txt
-*.sh
+
+# Arquivos de lock
 *.lock
+
+# Playwright context (será criado no container)
 .playwright_context/
+
+# JSON (exceto services_order.json que é necessário)
 *.json
 !services_order.json
 
