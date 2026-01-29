@@ -62,27 +62,42 @@ def test_urlebird_selenium(username, headless=False):
         
         print("🔧 Criando driver Chrome...")
         # Tentar encontrar Chrome automaticamente
-        import shutil
         chrome_paths = [
             '/usr/bin/google-chrome',
             '/usr/bin/google-chrome-stable',
             '/usr/bin/chromium',
             '/usr/bin/chromium-browser',
-            '/snap/bin/chromium'
+            '/snap/bin/chromium',
+            '/snap/chromium/current/usr/lib/chromium-browser/chrome',
+            shutil.which('google-chrome'),
+            shutil.which('google-chrome-stable'),
+            shutil.which('chromium'),
+            shutil.which('chromium-browser')
         ]
         
         chrome_binary = None
         for path in chrome_paths:
-            if shutil.which(path) or os.path.exists(path):
+            if path and os.path.exists(path):
                 chrome_binary = path
-                print(f"   Chrome encontrado em: {chrome_binary}")
+                print(f"   ✓ Chrome encontrado em: {chrome_binary}")
+                options.binary_location = chrome_binary
                 break
         
-        if chrome_binary:
-            options.binary_location = chrome_binary
+        if not chrome_binary:
+            print("   ⚠ Chrome não encontrado, undetected-chromedriver tentará auto-detectar...")
         
-        # Criar driver sem especificar version_main para auto-detectar
-        driver = uc.Chrome(options=options, use_subprocess=True)
+        # Criar driver - undetected-chromedriver vai tentar encontrar Chrome automaticamente
+        try:
+            if chrome_binary:
+                driver = uc.Chrome(options=options, use_subprocess=True)
+            else:
+                # Tentar sem especificar binary_location - auto-detectar
+                driver = uc.Chrome(use_subprocess=True)
+        except Exception as e:
+            print(f"   ❌ Erro ao criar driver: {e}")
+            print("   Tentando método alternativo...")
+            # Tentar método mais simples sem opções
+            driver = uc.Chrome()
         
         print("✅ Driver criado com sucesso!\n")
         
