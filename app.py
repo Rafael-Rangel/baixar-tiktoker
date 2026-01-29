@@ -830,63 +830,63 @@ def get_latest_videos():
             
             for channel in channels:
                 username = validate_username(channel)
-            if not username:
-                results.append({
-                    'channel': channel,
-                    'success': False,
-                    'error': 'Username inválido'
-                })
-                continue
-            
-            logger.info(f"Buscando último vídeo de @{username}...")
-            
-            # Buscar URL do vídeo mais recente e dados do canal usando Urlebird
-            tiktok_url, urlebird_video_url, channel_data, error = get_latest_video_url_from_channel(username)
-            
-            if error or not tiktok_url:
-                results.append({
+                if not username:
+                    results.append({
+                        'channel': channel,
+                        'success': False,
+                        'error': 'Username inválido'
+                    })
+                    continue
+                
+                logger.info(f"Buscando último vídeo de @{username}...")
+                
+                # Buscar URL do vídeo mais recente e dados do canal usando Urlebird
+                tiktok_url, urlebird_video_url, channel_data, error = get_latest_video_url_from_channel(username)
+                
+                if error or not tiktok_url:
+                    results.append({
+                        'channel': username,
+                        'success': False,
+                        'error': error or 'Não foi possível encontrar vídeo mais recente'
+                    })
+                    continue
+                
+                # Extrair metadados e métricas completas do vídeo
+                video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
+                
+                # Montar resultado completo
+                result = {
                     'channel': username,
-                    'success': False,
-                    'error': error or 'Não foi possível encontrar vídeo mais recente'
-                })
-                continue
-            
-            # Extrair metadados e métricas completas do vídeo
-            video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
-            
-            # Montar resultado completo
-            result = {
-                'channel': username,
-                'success': True,
-                'url': tiktok_url,
-                'urlebird_url': urlebird_video_url
-            }
-            
-            # Adicionar dados do canal
-            if channel_data:
-                result['channel_data'] = {
-                    'followers': channel_data.get('followers'),
-                    'total_likes': channel_data.get('total_likes'),
-                    'videos_count': channel_data.get('videos_count')
+                    'success': True,
+                    'url': tiktok_url,
+                    'urlebird_url': urlebird_video_url
                 }
-            
-            # Adicionar metadados e métricas do vídeo
-            if video_details:
-                result['video'] = {
-                    'caption': video_details.get('caption'),
-                    'posted_time': video_details.get('posted_time'),
-                    'metrics': {
-                        'views': video_details.get('views'),
-                        'likes': video_details.get('likes'),
-                        'comments': video_details.get('comments'),
-                        'shares': video_details.get('shares')
-                    },
-                    'cdn_link': video_details.get('cdn_link')
-                }
-            elif details_error:
-                result['video_error'] = details_error
-            
-            results.append(result)
+                
+                # Adicionar dados do canal
+                if channel_data:
+                    result['channel_data'] = {
+                        'followers': channel_data.get('followers'),
+                        'total_likes': channel_data.get('total_likes'),
+                        'videos_count': channel_data.get('videos_count')
+                    }
+                
+                # Adicionar metadados e métricas do vídeo
+                if video_details:
+                    result['video'] = {
+                        'caption': video_details.get('caption'),
+                        'posted_time': video_details.get('posted_time'),
+                        'metrics': {
+                            'views': video_details.get('views'),
+                            'likes': video_details.get('likes'),
+                            'comments': video_details.get('comments'),
+                            'shares': video_details.get('shares')
+                        },
+                        'cdn_link': video_details.get('cdn_link')
+                    }
+                elif details_error:
+                    result['video_error'] = details_error
+                
+                results.append(result)
         
         # Retornar resultados
         success_count = sum(1 for r in results if r.get('success'))
