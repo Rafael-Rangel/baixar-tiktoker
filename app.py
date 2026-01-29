@@ -180,22 +180,21 @@ def get_latest_video_url_from_channel_selenium(username):
         url = f"https://urlebird.com/pt/user/{username}/"
         logger.info(f"Buscando vídeo mais recente de @{username} via Selenium (anti-detecção)...")
         
-        # Configurar Chrome com opções anti-detecção
+        # Configurar Chrome com opções anti-detecção (simplificado - deixar undetected-chromedriver gerenciar mais)
         options = uc.ChromeOptions()
+        # Apenas argumentos essenciais para Docker/VPS
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-extensions')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920,1080')
-        options.add_argument('--start-maximized')
         options.add_argument('--lang=pt-BR')
-        # Removido excludeSwitches - não é suportado em todas as versões
-        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
         
-        # User-Agent realista
-        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        # User-Agent mais recente e consistente (Linux para VPS, mas funciona local também)
+        options.add_argument('user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+        
+        # NÃO adicionar --disable-blink-features=AutomationControlled
+        # O undetected-chromedriver já gerencia isso internamente
+        # NÃO adicionar useAutomationExtension - pode interferir com o undetected-chromedriver
         
         # Tentar encontrar Chrome automaticamente
         import shutil
@@ -310,9 +309,24 @@ def get_latest_video_url_from_channel_selenium(username):
         except TimeoutException:
             return None, None, None, "Timeout ao carregar página"
         
+        # Aguardar elementos específicos aparecerem (links de vídeo)
+        try:
+            logger.info("Aguardando elementos específicos da página...")
+            WebDriverWait(driver, 20).until(
+                lambda d: '/video/' in d.page_source or 
+                          len(d.find_elements(By.TAG_NAME, 'a')) > 10
+            )
+            time.sleep(2)  # Aguardar mais um pouco para garantir
+        except TimeoutException:
+            logger.warning("Timeout aguardando elementos específicos, continuando...")
+        
         # Obter HTML da página
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
+        
+        # Verificar se foi bloqueado
+        if "403" in html or "Forbidden" in html or "blocked" in html.lower():
+            return None, None, None, "Página bloqueada pelo Cloudflare (403 Forbidden)"
         
         # Extrair dados do canal
         channel_data = get_channel_data(username, soup)
