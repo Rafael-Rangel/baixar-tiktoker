@@ -112,18 +112,6 @@ APIFY_API_TOKEN=seu_token_aqui
 RAPIDAPI_KEY=sua_chave_aqui
 ```
 
-## 📋 Estrutura do Projeto
-
-```
-.
-├── app.py                 # API Flask principal
-├── Dockerfile             # Configuração Docker
-├── docker-compose.yml     # Docker Compose
-├── requirements.txt       # Dependências Python
-├── services_order.json    # Ordem otimizada dos serviços
-└── downloads/             # Pasta de downloads
-```
-
 ## 🐳 Deploy em VPS
 
 ```bash
@@ -131,15 +119,18 @@ RAPIDAPI_KEY=sua_chave_aqui
 git clone https://github.com/Rafael-Rangel/baixar-tiktoker.git
 cd baixar-tiktoker
 
-# 2. Build e start
+# 2. Limpar arquivos desnecessários
+bash limpar_vps.sh
+
+# 3. Build e start
 docker compose build
 docker compose up -d
 
-# 3. Verificar status
+# 4. Verificar status
 docker ps
 docker logs tiktok-downloader-api
 
-# 4. Testar
+# 5. Testar
 curl http://localhost:5000/health
 ```
 
@@ -167,7 +158,3 @@ CORS está habilitado para integração com n8n e outras ferramentas.
 ## 📄 Licença
 
 MIT
-
-## 🤝 Contribuindo
-
-Pull requests são bem-vindos!
