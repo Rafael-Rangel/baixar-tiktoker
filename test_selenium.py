@@ -6,6 +6,8 @@ Abre o navegador visível para você ver o processo
 
 import sys
 import time
+import os
+import shutil
 
 # Importar bibliotecas
 try:
@@ -59,7 +61,28 @@ def test_urlebird_selenium(username, headless=False):
         options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
         print("🔧 Criando driver Chrome...")
-        driver = uc.Chrome(options=options, version_main=None, use_subprocess=True)
+        # Tentar encontrar Chrome automaticamente
+        import shutil
+        chrome_paths = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/snap/bin/chromium'
+        ]
+        
+        chrome_binary = None
+        for path in chrome_paths:
+            if shutil.which(path) or os.path.exists(path):
+                chrome_binary = path
+                print(f"   Chrome encontrado em: {chrome_binary}")
+                break
+        
+        if chrome_binary:
+            options.binary_location = chrome_binary
+        
+        # Criar driver sem especificar version_main para auto-detectar
+        driver = uc.Chrome(options=options, use_subprocess=True)
         
         print("✅ Driver criado com sucesso!\n")
         
