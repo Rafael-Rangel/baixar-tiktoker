@@ -142,20 +142,32 @@ def get_latest_video_url_from_channel(username):
         session = requests.Session()
         session.headers.update(headers)
         
-        # Tentar primeiro acessar a página inicial para obter cookies
+        # Tentar primeiro acessar a página inicial em PT para obter cookies
         try:
-            logger.info("Obtendo cookies da página inicial...")
-            session.get('https://urlebird.com/', timeout=10)
+            logger.info("Obtendo cookies da página inicial (PT)...")
+            session.get('https://urlebird.com/pt/', timeout=10)
             import time
             time.sleep(1)  # Pequeno delay para parecer mais humano
         except Exception as e:
             logger.warning(f"Erro ao obter cookies: {str(e)}")
+            # Tentar página inicial sem /pt/ como fallback
+            try:
+                session.get('https://urlebird.com/', timeout=10)
+                import time
+                time.sleep(0.5)
+            except:
+                pass
         
-        # Tentar primeiro com /pt/ (versão em português)
+        # URL exata: sempre usar /pt/ primeiro (versão em português)
         urls_to_try = [
-            f"https://urlebird.com/pt/user/{username}/",
-            f"https://urlebird.com/user/{username}/"
+            f"https://urlebird.com/pt/user/{username}/"
         ]
+        
+        # Fallback apenas se necessário
+        # urls_to_try = [
+        #     f"https://urlebird.com/pt/user/{username}/",
+        #     f"https://urlebird.com/user/{username}/"
+        # ]
         
         response = None
         url_used = None
