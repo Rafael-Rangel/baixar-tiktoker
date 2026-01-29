@@ -55,6 +55,48 @@ except ImportError as e:
     Tikmate = TTDownloader = TikWM = None
     snaptik = mdown = tikdown = tikwm = ttdownloader = ssstik = None
 
+# Função para carregar cookies de um arquivo formato Netscape
+def load_cookies_from_file(file_path="/app/cookies.txt"):
+    """Carrega cookies do arquivo formato Netscape e retorna dicionário"""
+    cookies_dict = {}
+    if not os.path.exists(file_path):
+        logger.debug(f"Arquivo de cookies não encontrado: {file_path}")
+        return cookies_dict
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Formato Netscape: domain, flag, path, secure, expiration, name, value
+                parts = line.split('\t')
+                if len(parts) >= 7:
+                    try:
+                        cookie_domain = parts[0]
+                        cookie_name = parts[5]
+                        cookie_value = parts[6]
+                        
+                        # Só adicionar cookies do domínio urlebird.com
+                        if 'urlebird.com' in cookie_domain:
+                            cookies_dict[cookie_name] = cookie_value
+                    except Exception as e:
+                        logger.debug(f"Erro ao processar cookie: {e}")
+                        continue
+        
+        if cookies_dict:
+            logger.info(f"✓ {len(cookies_dict)} cookie(s) carregado(s) de {file_path}")
+        else:
+            logger.warning(f"Nenhum cookie válido encontrado em {file_path}")
+    except Exception as e:
+        logger.warning(f"Erro ao carregar cookies: {e}")
+    
+    return cookies_dict
+
+# Carregar cookies globalmente na inicialização
+URLEBIRD_COOKIES = load_cookies_from_file()
+
 def validate_tiktok_url(url):
     """Valida se a URL é do TikTok"""
     tiktok_patterns = [
