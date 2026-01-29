@@ -73,6 +73,15 @@ except ImportError:
     Stealth = None
     PLAYWRIGHT_STEALTH_AVAILABLE = False
 
+# Importar Apify Client (API profissional para scraping TikTok)
+try:
+    from apify_client import ApifyClient
+    APIFY_AVAILABLE = True
+except ImportError:
+    logger.info("Apify Client não está instalado. Execute: pip install apify-client")
+    APIFY_AVAILABLE = False
+    ApifyClient = None
+
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para n8n
 
@@ -508,6 +517,97 @@ def get_latest_video_url_from_channel_rapidapi(username):
     except Exception as e:
         error_msg = f"Erro ao processar resposta RapidAPI: {str(e)}"
         logger.warning(error_msg)
+        return None, None, None, error_msg
+
+def get_latest_video_url_from_channel_apify(username):
+    """Extrai a URL do vídeo mais recente usando Apify TikTok Scraper (API profissional)
+    
+    Apify é uma plataforma profissional que já resolve bypass de Cloudflare e anti-bot.
+    Muito mais confiável que métodos manuais.
+    
+    Retorna: (tiktok_url, service_video_url, channel_data, error)
+    """
+    if not APIFY_AVAILABLE:
+        return None, None, None, "Apify Client não está instalado. Execute: pip install apify-client"
+    
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        logger.info(f"Tentando Apify TikTok Scraper para @{username}...")
+        
+        # Obter API token do Apify (variável de ambiente)
+        apify_token = os.getenv('APIFY_API_TOKEN', None)
+        if not apify_token:
+            return None, None, None, "APIFY_API_TOKEN não configurado. Configure a variável de ambiente com sua chave do Apify"
+        
+        # Inicializar cliente Apify
+        client = ApifyClient(apify_token)
+        
+        # Preparar input para o Actor TikTok Scraper
+        run_input = {
+            "profiles": [username],  # Lista de usernames
+            "resultsPerPage": 1,  # Apenas o vídeo mais recente
+            "profileScrapeSections": ["videos"],  # Apenas vídeos
+            "profileSorting": "latest",  # Mais recente primeiro
+            "excludePinnedPosts": False,  # Incluir posts fixados
+            "maxFollowersPerProfile": 0,
+            "maxFollowingPerProfile": 0,
+            "commentsPerPost": 0,
+            "maxRepliesPerComment": 0,
+            "shouldDownloadVideos": False,  # Não baixar vídeos (apenas metadados)
+            "shouldDownloadCovers": False,
+            "shouldDownloadSubtitles": False,
+            "shouldDownloadAvatars": False,
+            "proxyCountryCode": "None"
+        }
+        
+        # Executar Actor e aguardar conclusão
+        logger.info("Executando Apify TikTok Scraper...")
+        run = client.actor("clockworks/tiktok-scraper").call(run_input=run_input)
+        
+        # Buscar resultados do dataset
+        dataset_id = run.get("defaultDatasetId")
+        if not dataset_id:
+            return None, None, None, "Dataset não foi criado pelo Apify"
+        
+        logger.info(f"Buscando resultados do dataset {dataset_id}...")
+        
+        # Iterar pelos itens do dataset
+        items = list(client.dataset(dataset_id).iterate_items())
+        
+        if not items or len(items) == 0:
+            return None, None, None, f"Nenhum vídeo encontrado para @{username}"
+        
+        # Pegar o primeiro item (mais recente devido ao profileSorting: "latest")
+        latest_video = items[0]
+        
+        # Extrair URL do vídeo
+        web_video_url = latest_video.get("webVideoUrl") or latest_video.get("submittedVideoUrl")
+        if not web_video_url:
+            return None, None, None, "URL do vídeo não encontrada na resposta do Apify"
+        
+        # Extrair dados do canal do authorMeta
+        author_meta = latest_video.get("authorMeta", {})
+        channel_data = {
+            'username': username,
+            'followers': author_meta.get("fans", "N/A"),
+            'total_likes': author_meta.get("heart", "N/A"),
+            'videos_posted': author_meta.get("video", "N/A"),
+            'nickname': author_meta.get("nickName", "N/A"),
+            'verified': author_meta.get("verified", False),
+            'signature': author_meta.get("signature", "")
+        }
+        
+        logger.info(f"✓ Vídeo mais recente encontrado via Apify: {web_video_url}")
+        return web_video_url, web_video_url, channel_data, None
+        
+    except Exception as e:
+        error_msg = f"Erro ao usar Apify: {str(e)}"
+        logger.error(error_msg)
+        import traceback
+        logger.debug(traceback.format_exc())
         return None, None, None, error_msg
 
 def get_latest_video_url_from_channel_tikwm(username):
@@ -1222,19 +1322,30 @@ def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal
     
     Tenta múltiplas alternativas na seguinte ordem:
-    1. RapidAPI TikTok Scraper (API profissional, mais confiável)
-    2. TikWM API (API pública)
-    3. Countik (scraping alternativo)
-    4. Playwright + Stealth (método do Manus - bypass Cloudflare eficaz)
-    5. Browser Use (Agent-based, fallback)
-    6. Urlebird com SeleniumBase (método avançado)
-    7. Urlebird com Selenium padrão (anti-detecção)
-    8. Urlebird com requests (fallback)
+    1. Apify TikTok Scraper (API profissional - mais confiável, resolve Cloudflare automaticamente)
+    2. RapidAPI TikTok Scraper (API profissional)
+    3. TikWM API (API pública)
+    4. Countik (scraping alternativo)
+    5. Playwright + Stealth (método do Manus - bypass Cloudflare eficaz)
+    6. Browser Use (Agent-based, fallback)
+    7. Urlebird com SeleniumBase (método avançado)
+    8. Urlebird com Selenium padrão (anti-detecção)
+    9. Urlebird com requests (fallback)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
-    # Método 1: Tentar RapidAPI TikTok Scraper primeiro (mais confiável)
     logger.info(f"Tentando obter último vídeo de @{username}...")
+    
+    # Método 1: Tentar Apify TikTok Scraper primeiro (mais confiável - resolve Cloudflare automaticamente)
+    if APIFY_AVAILABLE:
+        logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
+        result = get_latest_video_url_from_channel_apify(username)
+        if result[0] is not None:  # Se obteve sucesso
+            logger.info("✓ Sucesso com Apify TikTok Scraper")
+            return result
+        logger.warning("Apify falhou, tentando RapidAPI...")
+    
+    # Método 2: Tentar RapidAPI TikTok Scraper
     result = get_latest_video_url_from_channel_rapidapi(username)
     if result[0] is not None:  # Se obteve sucesso
         logger.info("✓ Sucesso com RapidAPI TikTok Scraper")
@@ -1860,9 +1971,9 @@ def download_tiktok_video(url):
 @app.route('/health', methods=['GET'])
 def health():
     """Endpoint de health check"""
-    status = 'ok' if (TIKTOK_DOWNLOADER_AVAILABLE or BEAUTIFULSOUP_AVAILABLE) else 'warning'
+    status = 'ok' if (TIKTOK_DOWNLOADER_AVAILABLE or BEAUTIFULSOUP_AVAILABLE or APIFY_AVAILABLE) else 'warning'
     message = 'API funcionando'
-    if not TIKTOK_DOWNLOADER_AVAILABLE and not BEAUTIFULSOUP_AVAILABLE:
+    if not TIKTOK_DOWNLOADER_AVAILABLE and not BEAUTIFULSOUP_AVAILABLE and not APIFY_AVAILABLE:
         message = 'Nenhuma biblioteca de download disponível'
     elif not TIKTOK_DOWNLOADER_AVAILABLE:
         message = 'API funcionando (apenas método Urlebird disponível)'
@@ -1874,9 +1985,13 @@ def health():
         'message': message,
         'tiktok_downloader_available': TIKTOK_DOWNLOADER_AVAILABLE,
         'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
+        'apify_available': APIFY_AVAILABLE,
+        'apify_token_configured': bool(os.getenv('APIFY_API_TOKEN')),
         'selenium_available': SELENIUM_AVAILABLE,
         'seleniumbase_available': SELENIUMBASE_AVAILABLE,
-        'browser_use_available': BROWSER_USE_AVAILABLE
+        'browser_use_available': BROWSER_USE_AVAILABLE,
+        'playwright_available': PLAYWRIGHT_AVAILABLE,
+        'playwright_stealth_available': PLAYWRIGHT_STEALTH_AVAILABLE
     }), 200
 
 @app.route('/channels/latest', methods=['POST'])
@@ -2348,7 +2463,14 @@ def download_get():
 @app.route('/services', methods=['GET'])
 def list_services():
     """Lista serviços disponíveis"""
-    services_list = [
+    services_list = []
+    
+    # Adicionar Apify primeiro (mais confiável)
+    if APIFY_AVAILABLE:
+        services_list.append('Apify TikTok Scraper')
+    
+    # Serviços padrão do tiktok-downloader
+    services_list.extend([
             'Snaptik',
             'Tikmate',
             'SSStik',
@@ -2356,8 +2478,7 @@ def list_services():
             'TikWM',
             'MusicallyDown',
         'Tikdown',
-        'Urlebird',  # Fallback
-    ]
+    ])
     
     # Adicionar serviços avançados se disponíveis
     if PLAYWRIGHT_STEALTH_AVAILABLE:
@@ -2369,9 +2490,14 @@ def list_services():
     if SELENIUM_AVAILABLE:
         services_list.append('Selenium')
     
+    # Urlebird como último fallback
+    services_list.append('Urlebird')
+    
     return jsonify({
         'services': services_list,
         'available': TIKTOK_DOWNLOADER_AVAILABLE,
+        'apify_available': APIFY_AVAILABLE,
+        'apify_token_configured': bool(os.getenv('APIFY_API_TOKEN')),
         'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
         'selenium_available': SELENIUM_AVAILABLE,
         'seleniumbase_available': SELENIUMBASE_AVAILABLE,
