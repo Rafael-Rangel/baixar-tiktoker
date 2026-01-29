@@ -888,14 +888,19 @@ def get_latest_videos():
                 
                 results.append(result)
         
+        # Validar se pelo menos um campo foi fornecido
+        if 'urls' not in data and 'channels' not in data:
+            return jsonify({'error': 'Campo "channels" ou "urls" é obrigatório'}), 400
+        
         # Retornar resultados
+        total_items = len(data.get('urls', [])) + len(data.get('channels', []))
         success_count = sum(1 for r in results if r.get('success'))
         return jsonify({
-            'total': len(channels),
+            'total': total_items,
             'success': success_count,
-            'failed': len(channels) - success_count,
+            'failed': total_items - success_count,
             'results': results,
-            'message': f'{success_count} de {len(channels)} canal(is) encontrado(s) com sucesso'
+            'message': f'{success_count} de {total_items} item(s) processado(s) com sucesso'
         }), 200
         
     except Exception as e:
