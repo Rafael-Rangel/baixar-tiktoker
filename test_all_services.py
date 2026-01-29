@@ -20,15 +20,14 @@ from app import snaptik, Tikmate, ssstik, ttdownloader, tikwm, mdown, tikdown
 # Arquivo para salvar ordem otimizada
 SERVICES_ORDER_FILE = "services_order.json"
 
-# Lista completa de serviços (exceto Apify e Urlebird que são fallbacks)
+# Lista completa de serviços (apenas os que funcionam)
+# Serviços removidos: Tikmate, SSStik, Tikdown (falharam nos testes)
+# Urlebird foi removido permanentemente
 ALL_SERVICES = [
     ('Snaptik', snaptik, True, False),
-    ('Tikmate', Tikmate, False, False),
-    ('SSStik', ssstik, True, False),
     ('TTDownloader', ttdownloader, True, False),
     ('TikWM', tikwm, True, False),
     ('MusicallyDown', mdown, True, False),
-    ('Tikdown', tikdown, True, False),
 ]
 
 def load_services_order():
@@ -97,7 +96,8 @@ def test_all_services(test_url, skip_working=True):
     print("="*60)
     print(f"\n📹 URL de teste: {test_url}")
     print(f"⏭️  Apify será ignorado (já considerado válido)")
-    print(f"⏭️  Urlebird será ignorado (fallback manual)")
+    print(f"❌ Urlebird foi removido permanentemente")
+    print(f"❌ Tikmate, SSStik e Tikdown foram removidos (falharam nos testes)")
     
     # Carregar ordem existente
     working_services, failed_services = load_services_order()

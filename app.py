@@ -1895,27 +1895,25 @@ def load_optimized_services_order():
     return []
 
 def get_services_list():
-    """Retorna lista de serviços ordenada por confiabilidade (baseada em testes)"""
-    # Mapeamento de nomes para objetos
+    """Retorna lista de serviços ordenada por confiabilidade (baseada em testes)
+    
+    NOTA: Urlebird foi removido permanentemente - não será mais usado.
+    Serviços removidos por falhas: Tikmate, SSStik, Tikdown
+    """
+    # Mapeamento de nomes para objetos (apenas serviços que funcionam)
     service_map = {
         'Snaptik': ('Snaptik', snaptik, True, False),
-        'Tikmate': ('Tikmate', Tikmate, False, False),
-        'SSStik': ('SSStik', ssstik, True, False),
         'TTDownloader': ('TTDownloader', ttdownloader, True, False),
         'TikWM': ('TikWM', tikwm, True, False),
         'MusicallyDown': ('MusicallyDown', mdown, True, False),
-        'Tikdown': ('Tikdown', tikdown, True, False),
     }
     
-    # Ordem padrão (fallback se não houver ordem otimizada)
+    # Ordem padrão (apenas serviços que funcionam)
     default_order = [
         'Snaptik',
-        'Tikmate',
-        'SSStik',
         'TTDownloader',
         'TikWM',
         'MusicallyDown',
-        'Tikdown',
     ]
     
     # Carregar ordem otimizada
@@ -1936,8 +1934,8 @@ def get_services_list():
         # Usar ordem padrão se não houver ordem otimizada
         services = [service_map[name] for name in default_order if name in service_map]
     
-    # Sempre adicionar Urlebird como último fallback
-    services.append(('Urlebird', None, False, True))
+    # Urlebird foi removido permanentemente
+    # Não adicionar mais Urlebird como fallback
     
     return services
 
@@ -1961,19 +1959,10 @@ def download_tiktok_video(url):
         try:
             logger.info(f"Tentando baixar com {service_name}...")
             
-            # Método Urlebird (último na lista - fallback)
+            # Urlebird foi removido permanentemente - não usar mais
             if is_urlebird:
-                downloaded_file, error = download_video_via_urlebird(url)
-                if error:
-                    last_error = error
-                    logger.warning(f"Erro ao usar {service_name}: {error}")
-                    continue
-                if downloaded_file and os.path.exists(downloaded_file) and os.path.getsize(downloaded_file) > 0:
-                    logger.info(f"✓ Vídeo baixado com sucesso usando {service_name}: {downloaded_file}")
-                    return downloaded_file, None
-                else:
-                    logger.warning(f"{service_name} não conseguiu baixar o vídeo")
-                    continue
+                logger.warning(f"{service_name} foi removido permanentemente")
+                continue
             
             # Métodos padrão do tiktok-downloader
             if service_func is None:

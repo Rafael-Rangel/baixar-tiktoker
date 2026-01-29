@@ -6,10 +6,13 @@
     "TikWM",
     "MusicallyDown"
   ],
-  "failed_services": [
+  "failed_services": [],
+  "removed_services": [
     "Tikmate",
     "SSStik",
-    "Tikdown"
+    "Tikdown",
+    "Urlebird"
   ],
-  "total_tested": 7
+  "total_tested": 4,
+  "note": "Serviços removidos: Tikmate (erro parsing JS), SSStik (erro token), Tikdown (erro token), Urlebird (decisão do usuário)"
 }
