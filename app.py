@@ -120,16 +120,53 @@ def get_latest_video_url_from_channel(username):
         if not username:
             return None, None, None, "Username inválido"
         
-        url = f"https://urlebird.com/user/{username}/"
-        logger.info(f"Buscando vídeo mais recente de @{username} via Urlebird...")
-        
+        # Headers mais realistas para evitar bloqueio
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://urlebird.com/'
         }
         
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        # Tentar primeiro com /pt/ (versão em português)
+        urls_to_try = [
+            f"https://urlebird.com/pt/user/{username}/",
+            f"https://urlebird.com/user/{username}/"
+        ]
         
+        response = None
+        url_used = None
+        
+        for url in urls_to_try:
+            try:
+                logger.info(f"Tentando acessar: {url}")
+                response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+                if response.status_code == 200:
+                    url_used = url
+                    break
+                elif response.status_code == 403:
+                    logger.warning(f"403 Forbidden em {url}, tentando próxima URL...")
+                    continue
+                else:
+                    response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Erro ao acessar {url}: {str(e)}")
+                continue
+        
+        if not response or response.status_code != 200:
+            error_msg = f"Erro ao acessar Urlebird: Não foi possível acessar nenhuma URL (último status: {response.status_code if response else 'N/A'})"
+            logger.error(error_msg)
+            return None, None, None, error_msg
+        
+        logger.info(f"✓ Acesso bem-sucedido via: {url_used}")
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # Extrair dados do canal
@@ -198,11 +235,23 @@ def get_video_details_from_urlebird(urlebird_video_url):
         return None, "BeautifulSoup4 não está instalado"
     
     try:
+        # Headers mais realistas para evitar bloqueio
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Cache-Control': 'max-age=0',
+            'Referer': 'https://urlebird.com/'
         }
         
-        response = requests.get(urlebird_video_url, headers=headers, timeout=10)
+        response = requests.get(urlebird_video_url, headers=headers, timeout=15, allow_redirects=True)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
