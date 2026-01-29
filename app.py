@@ -94,15 +94,15 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # Importar biblioteca tiktok-downloader
 try:
-    from tiktok_downloader import Tikmate, TTDownloader, TikWM
-    from tiktok_downloader import snaptik, mdown, tikdown, tikwm, ttdownloader
-    from tiktok_downloader.ssstik import ssstik
+    # Importar apenas serviços que funcionam: Snaptik, TTDownloader, TikWM, MusicallyDown
+    from tiktok_downloader import TTDownloader, TikWM
+    from tiktok_downloader import snaptik, mdown, tikwm, ttdownloader
     TIKTOK_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
     logger.error(f"tiktok-downloader não está instalado ou erro na importação: {e}. Execute: pip install tiktok_downloader")
     TIKTOK_DOWNLOADER_AVAILABLE = False
-    Tikmate = TTDownloader = TikWM = None
-    snaptik = mdown = tikdown = tikwm = ttdownloader = ssstik = None
+    TTDownloader = TikWM = None
+    snaptik = mdown = tikwm = ttdownloader = None
 
 # Função para carregar cookies de um arquivo formato Netscape
 def load_cookies_from_file(file_path="/app/cookies.txt"):
@@ -1897,8 +1897,13 @@ def load_optimized_services_order():
 def get_services_list():
     """Retorna lista de serviços ordenada por confiabilidade (baseada em testes)
     
-    NOTA: Urlebird foi removido permanentemente - não será mais usado.
-    Serviços removidos por falhas: Tikmate, SSStik, Tikdown
+    Serviços que funcionam: Snaptik, TTDownloader, TikWM, MusicallyDown
+    
+    Serviços removidos permanentemente:
+    - Urlebird (decisão do usuário)
+    - Tikmate (site bloqueado pelo Cloudflare)
+    - SSStik (erro de extração de token)
+    - Tikdown (erro de extração de token)
     """
     # Mapeamento de nomes para objetos (apenas serviços que funcionam)
     service_map = {
@@ -1973,13 +1978,8 @@ def download_tiktok_video(url):
             if is_function:
                 data_list = service_func(url)
             else:
-                # Classes: Tikmate, TTDownloader, TikWM
-                if service_name == 'Tikmate':
-                    # Tikmate usa get_media() em vez de passar URL no construtor
-                    service = service_func()
-                    data_list = service.get_media(url)
-                else:
-                    data_list = service_func(url)
+                # Classes: TTDownloader, TikWM
+                data_list = service_func(url)
             
             # Verificar se retornou lista válida
             if not data_list or not isinstance(data_list, list) or len(data_list) == 0:
@@ -2519,11 +2519,9 @@ def list_services():
     if APIFY_AVAILABLE:
         services_list.append('Apify TikTok Scraper')
     
-    # Serviços padrão do tiktok-downloader
+    # Serviços padrão do tiktok-downloader (apenas os que funcionam)
     services_list.extend([
             'Snaptik',
-            'Tikmate',
-            'SSStik',
             'TTDownloader',
             'TikWM',
             'MusicallyDown',
