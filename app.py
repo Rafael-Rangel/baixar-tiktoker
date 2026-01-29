@@ -120,10 +120,10 @@ def get_latest_video_url_from_channel(username):
         if not username:
             return None, None, None, "Username inválido"
         
-        # Headers mais realistas para evitar bloqueio
+        # Headers mais realistas para evitar bloqueio - simular navegador real
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
@@ -132,9 +132,24 @@ def get_latest_video_url_from_channel(username):
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
             'Cache-Control': 'max-age=0',
-            'Referer': 'https://urlebird.com/'
+            'Referer': 'https://urlebird.com/',
+            'Origin': 'https://urlebird.com'
         }
+        
+        # Criar sessão para manter cookies
+        session = requests.Session()
+        session.headers.update(headers)
+        
+        # Tentar primeiro acessar a página inicial para obter cookies
+        try:
+            logger.info("Obtendo cookies da página inicial...")
+            session.get('https://urlebird.com/', timeout=10)
+            import time
+            time.sleep(1)  # Pequeno delay para parecer mais humano
+        except Exception as e:
+            logger.warning(f"Erro ao obter cookies: {str(e)}")
         
         # Tentar primeiro com /pt/ (versão em português)
         urls_to_try = [
@@ -144,25 +159,45 @@ def get_latest_video_url_from_channel(username):
         
         response = None
         url_used = None
+        last_status = None
         
         for url in urls_to_try:
             try:
                 logger.info(f"Tentando acessar: {url}")
-                response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+                import time
+                time.sleep(0.5)  # Delay entre tentativas
+                
+                response = session.get(url, timeout=15, allow_redirects=True)
+                last_status = response.status_code
+                
                 if response.status_code == 200:
                     url_used = url
+                    logger.info(f"✓ Sucesso ao acessar: {url}")
                     break
                 elif response.status_code == 403:
-                    logger.warning(f"403 Forbidden em {url}, tentando próxima URL...")
+                    logger.warning(f"403 Forbidden em {url} - Urlebird está bloqueando requisições")
+                    # Tentar com headers diferentes
+                    session.headers.update({
+                        'Referer': 'https://www.google.com/',
+                        'Origin': 'https://www.google.com'
+                    })
+                    import time
+                    time.sleep(1)
+                    response = session.get(url, timeout=15, allow_redirects=True)
+                    if response.status_code == 200:
+                        url_used = url
+                        logger.info(f"✓ Sucesso após mudar referer: {url}")
+                        break
                     continue
                 else:
-                    response.raise_for_status()
+                    logger.warning(f"Status {response.status_code} em {url}")
+                    continue
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Erro ao acessar {url}: {str(e)}")
                 continue
         
         if not response or response.status_code != 200:
-            error_msg = f"Erro ao acessar Urlebird: Não foi possível acessar nenhuma URL (último status: {response.status_code if response else 'N/A'})"
+            error_msg = f"Erro ao acessar Urlebird: Não foi possível acessar nenhuma URL. Último status HTTP: {last_status if last_status else 'N/A'}. O Urlebird pode estar bloqueando requisições automatizadas. Tente novamente mais tarde ou use outro método."
             logger.error(error_msg)
             return None, None, None, error_msg
         
