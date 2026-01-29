@@ -245,11 +245,21 @@ def get_latest_video_url_from_channel_selenium(username):
 def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal usando Urlebird
     
+    Tenta primeiro com Selenium (anti-detecção), depois com requests.
     Retorna: (tiktok_url, urlebird_video_url, channel_data, error)
     """
     if not BEAUTIFULSOUP_AVAILABLE:
         return None, None, None, "BeautifulSoup4 não está instalado"
     
+    # Tentar primeiro com Selenium (mais confiável contra bloqueios)
+    if SELENIUM_AVAILABLE:
+        logger.info("Tentando método Selenium (anti-detecção)...")
+        result = get_latest_video_url_from_channel_selenium(username)
+        if result[0] is not None:  # Se obteve sucesso
+            return result
+        logger.warning("Selenium falhou, tentando método requests...")
+    
+    # Fallback para método requests
     try:
         username = validate_username(username)
         if not username:
