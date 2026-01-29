@@ -1322,30 +1322,21 @@ def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal
     
     Tenta múltiplas alternativas na seguinte ordem:
-    1. Apify TikTok Scraper (API profissional - mais confiável, resolve Cloudflare automaticamente)
-    2. RapidAPI TikTok Scraper (API profissional)
-    3. TikWM API (API pública)
-    4. Countik (scraping alternativo)
-    5. Playwright + Stealth (método do Manus - bypass Cloudflare eficaz)
-    6. Browser Use (Agent-based, fallback)
-    7. Urlebird com SeleniumBase (método avançado)
-    8. Urlebird com Selenium padrão (anti-detecção)
-    9. Urlebird com requests (fallback)
+    1. RapidAPI TikTok Scraper (API profissional)
+    2. TikWM API (API pública)
+    3. Countik (scraping alternativo)
+    4. Playwright + Stealth (método do Manus - bypass Cloudflare eficaz)
+    5. Browser Use (Agent-based, fallback)
+    6. Urlebird com SeleniumBase (método avançado)
+    7. Urlebird com Selenium padrão (anti-detecção)
+    8. Urlebird com requests (fallback)
+    9. Apify TikTok Scraper (ÚLTIMO - API profissional, resolve Cloudflare automaticamente)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
     logger.info(f"Tentando obter último vídeo de @{username}...")
     
-    # Método 1: Tentar Apify TikTok Scraper primeiro (mais confiável - resolve Cloudflare automaticamente)
-    if APIFY_AVAILABLE:
-        logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
-        result = get_latest_video_url_from_channel_apify(username)
-        if result[0] is not None:  # Se obteve sucesso
-            logger.info("✓ Sucesso com Apify TikTok Scraper")
-            return result
-        logger.warning("Apify falhou, tentando RapidAPI...")
-    
-    # Método 2: Tentar RapidAPI TikTok Scraper
+    # Método 1: Tentar RapidAPI TikTok Scraper primeiro
     result = get_latest_video_url_from_channel_rapidapi(username)
     if result[0] is not None:  # Se obteve sucesso
         logger.info("✓ Sucesso com RapidAPI TikTok Scraper")
@@ -1361,7 +1352,7 @@ def get_latest_video_url_from_channel(username):
     
     logger.warning("TikWM falhou, tentando Countik...")
     
-    # Método 2: Tentar Countik
+    # Método 3: Tentar Countik
     result = get_latest_video_url_from_channel_countik(username)
     if result[0] is not None:
         logger.info("✓ Sucesso com Countik")
@@ -1369,7 +1360,7 @@ def get_latest_video_url_from_channel(username):
     
     logger.warning("Countik falhou, tentando Playwright + Stealth...")
     
-    # Método 3: Tentar Playwright + Stealth (método recomendado pelo Manus - mais eficaz para Cloudflare)
+    # Método 4: Tentar Playwright + Stealth (método recomendado pelo Manus - mais eficaz para Cloudflare)
     if PLAYWRIGHT_AVAILABLE and PLAYWRIGHT_STEALTH_AVAILABLE:
         logger.info("Tentando método Playwright + Stealth (método do Manus)...")
         result = get_latest_video_url_from_channel_playwright(username)
@@ -1378,7 +1369,7 @@ def get_latest_video_url_from_channel(username):
             return result
         logger.warning("Playwright + Stealth falhou, tentando Browser Use...")
     
-    # Método 4: Tentar Browser Use (Agent-based, fallback)
+    # Método 5: Tentar Browser Use (Agent-based, fallback)
     if BROWSER_USE_AVAILABLE:
         logger.info("Tentando método Browser Use (Agent-based)...")
         result = get_latest_video_url_from_channel_browseruse(username)
@@ -1389,7 +1380,7 @@ def get_latest_video_url_from_channel(username):
     
     logger.warning("Tentando Urlebird com SeleniumBase...")
     
-    # Método 5: Tentar Urlebird com SeleniumBase (método mais avançado - conforme guia Cloudflare)
+    # Método 6: Tentar Urlebird com SeleniumBase (método mais avançado - conforme guia Cloudflare)
     if SELENIUMBASE_AVAILABLE:
         logger.info("Tentando método SeleniumBase (método avançado conforme guia Cloudflare)...")
         result = get_latest_video_url_from_channel_seleniumbase(username)
@@ -1398,7 +1389,7 @@ def get_latest_video_url_from_channel(username):
             return result
         logger.warning("SeleniumBase falhou, tentando Selenium padrão...")
     
-    # Método 6: Tentar Urlebird com Selenium padrão (anti-detecção)
+    # Método 7: Tentar Urlebird com Selenium padrão (anti-detecção)
     if SELENIUM_AVAILABLE:
         logger.info("Tentando método Selenium (anti-detecção)...")
         result = get_latest_video_url_from_channel_selenium(username)
@@ -1407,7 +1398,7 @@ def get_latest_video_url_from_channel(username):
             return result
         logger.warning("Selenium falhou, tentando método requests...")
     
-    # Método 7: Fallback para método requests (Urlebird)
+    # Método 8: Fallback para método requests (Urlebird)
     if not BEAUTIFULSOUP_AVAILABLE:
         return None, None, None, "BeautifulSoup4 não está instalado"
     
@@ -1601,11 +1592,24 @@ def get_latest_video_url_from_channel(username):
     except requests.exceptions.RequestException as e:
         error_msg = f"Erro ao acessar Urlebird: {str(e)}"
         logger.warning(error_msg)
-        return None, None, None, error_msg
+        # Não retornar ainda - tentar Apify como último recurso
     except Exception as e:
         error_msg = f"Erro ao processar página do Urlebird: {str(e)}"
         logger.warning(error_msg)
-        return None, None, None, error_msg
+        # Não retornar ainda - tentar Apify como último recurso
+    
+    # Método 9: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
+    if APIFY_AVAILABLE:
+        logger.warning("Todos os métodos falharam, tentando Apify como último recurso...")
+        logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
+        result = get_latest_video_url_from_channel_apify(username)
+        if result[0] is not None:  # Se obteve sucesso
+            logger.info("✓ Sucesso com Apify TikTok Scraper (último recurso)")
+            return result
+        logger.warning("Apify também falhou.")
+    
+    # Se chegou aqui, todos os métodos falharam
+    return None, None, None, "Todos os métodos falharam. Não foi possível obter o último vídeo do canal."
 
 def get_video_details_from_urlebird(urlebird_video_url):
     """Extrai metadados, métricas e link de download (CDN) do vídeo no Urlebird
