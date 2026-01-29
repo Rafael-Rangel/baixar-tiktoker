@@ -569,6 +569,13 @@ def get_video_details_from_urlebird(urlebird_video_url):
         
         # Criar sessão para manter cookies
         session = requests.Session()
+        
+        # Adicionar cookies carregados do arquivo (se disponíveis)
+        if URLEBIRD_COOKIES:
+            logger.info("Aplicando cookies carregados à sessão requests...")
+            for cookie_name, cookie_value in URLEBIRD_COOKIES.items():
+                session.cookies.set(cookie_name, cookie_value, domain='.urlebird.com')
+        
         session.headers.update(headers)
         
         # Tentar obter cookies primeiro
