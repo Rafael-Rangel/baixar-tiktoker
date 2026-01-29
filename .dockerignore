@@ -20,4 +20,12 @@ README*.md
 !requirements.txt
 .vscode
 .idea
+venv/
+*.txt
+!requirements.txt
+*.sh
+*.lock
+.playwright_context/
+*.json
+!services_order.json
 
