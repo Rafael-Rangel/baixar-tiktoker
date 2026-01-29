@@ -378,6 +378,98 @@ def get_latest_video_url_from_channel_selenium(username):
             except:
                 pass
 
+def get_latest_video_url_from_channel_rapidapi(username):
+    """Extrai a URL do vídeo mais recente usando RapidAPI TikTok Scraper
+    
+    Retorna: (tiktok_url, service_video_url, channel_data, error)
+    """
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        logger.info(f"Tentando RapidAPI TikTok Scraper para @{username}...")
+        
+        # RapidAPI TikTok Scraper endpoint
+        api_url = "https://tiktok-scraper7.p.rapidapi.com/user/posts"
+        
+        params = {
+            'unique_id': username,
+            'count': 1  # Apenas o mais recente
+        }
+        
+        headers = {
+            'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+        }
+        
+        # Tentar com chave de API se disponível (opcional)
+        rapidapi_key = os.getenv('RAPIDAPI_KEY', None)
+        if rapidapi_key:
+            headers['x-rapidapi-key'] = rapidapi_key
+        
+        response = requests.get(api_url, params=params, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Verificar estrutura da resposta
+            if 'data' in data and 'videos' in data['data']:
+                videos = data['data']['videos']
+            elif 'videos' in data:
+                videos = data['videos']
+            elif isinstance(data, list) and len(data) > 0:
+                videos = data
+            else:
+                videos = None
+            
+            if videos and len(videos) > 0:
+                latest_video = videos[0]
+                
+                # Extrair informações do vídeo (estrutura pode variar)
+                video_id = latest_video.get('video_id') or latest_video.get('id') or latest_video.get('aweme_id', '')
+                if not video_id and 'url' in latest_video:
+                    # Tentar extrair ID da URL
+                    import re
+                    url_match = re.search(r'/video/(\d+)', latest_video['url'])
+                    if url_match:
+                        video_id = url_match.group(1)
+                
+                if video_id:
+                    tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                    
+                    # Criar URL do serviço (usar URL do vídeo se disponível)
+                    service_video_url = latest_video.get('url', tiktok_url)
+                    
+                    # Extrair dados do canal
+                    channel_data = {
+                        'username': username,
+                        'followers': data.get('data', {}).get('followerCount') or data.get('followerCount', 'N/A'),
+                        'total_likes': data.get('data', {}).get('heartCount') or data.get('heartCount', 'N/A'),
+                        'videos_posted': data.get('data', {}).get('videoCount') or data.get('videoCount', 'N/A')
+                    }
+                    
+                    logger.info(f"✓ Vídeo mais recente encontrado via RapidAPI: {tiktok_url}")
+                    return tiktok_url, service_video_url, channel_data, None
+                else:
+                    return None, None, None, "Não foi possível extrair ID do vídeo da resposta"
+            else:
+                return None, None, None, f"Nenhum vídeo encontrado para @{username}"
+        elif response.status_code == 401 or response.status_code == 403:
+            return None, None, None, f"Erro de autenticação (pode precisar de chave RapidAPI): HTTP {response.status_code}"
+        else:
+            return None, None, None, f"Erro HTTP {response.status_code} ao acessar RapidAPI"
+            
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Erro ao acessar RapidAPI: {str(e)}"
+        logger.warning(error_msg)
+        return None, None, None, error_msg
+    except Exception as e:
+        error_msg = f"Erro ao processar resposta RapidAPI: {str(e)}"
+        logger.warning(error_msg)
+        return None, None, None, error_msg
+
 def get_latest_video_url_from_channel_tikwm(username):
     """Extrai a URL do vídeo mais recente usando TikWM API
     
@@ -539,15 +631,24 @@ def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal
     
     Tenta múltiplas alternativas na seguinte ordem:
-    1. TikWM API (mais rápido e confiável)
-    2. Countik (scraping alternativo)
-    3. Urlebird com Selenium (anti-detecção)
-    4. Urlebird com requests (fallback)
+    1. RapidAPI TikTok Scraper (API profissional, mais confiável)
+    2. TikWM API (API pública)
+    3. Countik (scraping alternativo)
+    4. Urlebird com Selenium (anti-detecção)
+    5. Urlebird com requests (fallback)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
-    # Método 1: Tentar TikWM API primeiro (mais rápido e confiável)
+    # Método 1: Tentar RapidAPI TikTok Scraper primeiro (mais confiável)
     logger.info(f"Tentando obter último vídeo de @{username}...")
+    result = get_latest_video_url_from_channel_rapidapi(username)
+    if result[0] is not None:  # Se obteve sucesso
+        logger.info("✓ Sucesso com RapidAPI TikTok Scraper")
+        return result
+    
+    logger.warning("RapidAPI falhou, tentando TikWM...")
+    
+    # Método 2: Tentar TikWM API
     result = get_latest_video_url_from_channel_tikwm(username)
     if result[0] is not None:  # Se obteve sucesso
         logger.info("✓ Sucesso com TikWM API")
