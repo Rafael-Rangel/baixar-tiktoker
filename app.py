@@ -140,23 +140,38 @@ def get_latest_video_url_from_channel(username):
         
         # Criar sessão para manter cookies
         session = requests.Session()
-        session.headers.update(headers)
+        
+        # Estratégia 1: Tentar com headers básicos primeiro
+        basic_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        session.headers.update(basic_headers)
         
         # Tentar primeiro acessar a página inicial em PT para obter cookies
         try:
             logger.info("Obtendo cookies da página inicial (PT)...")
-            session.get('https://urlebird.com/pt/', timeout=10)
+            initial_response = session.get('https://urlebird.com/pt/', timeout=10)
+            if initial_response.status_code == 200:
+                logger.info("✓ Cookies obtidos com sucesso")
             import time
-            time.sleep(1)  # Pequeno delay para parecer mais humano
+            time.sleep(2)  # Delay maior para parecer mais humano
         except Exception as e:
             logger.warning(f"Erro ao obter cookies: {str(e)}")
             # Tentar página inicial sem /pt/ como fallback
             try:
                 session.get('https://urlebird.com/', timeout=10)
                 import time
-                time.sleep(0.5)
+                time.sleep(1)
             except:
                 pass
+        
+        # Agora atualizar com headers completos
+        session.headers.update(headers)
         
         # URL exata: sempre usar /pt/ primeiro (versão em português)
         urls_to_try = [
@@ -187,19 +202,37 @@ def get_latest_video_url_from_channel(username):
                     logger.info(f"✓ Sucesso ao acessar: {url}")
                     break
                 elif response.status_code == 403:
-                    logger.warning(f"403 Forbidden em {url} - Urlebird está bloqueando requisições")
-                    # Tentar com headers diferentes
+                    logger.warning(f"403 Forbidden em {url} - Tentando estratégias alternativas...")
+                    
+                    # Estratégia 1: Mudar referer para Google
                     session.headers.update({
                         'Referer': 'https://www.google.com/',
                         'Origin': 'https://www.google.com'
                     })
                     import time
-                    time.sleep(1)
+                    time.sleep(2)
                     response = session.get(url, timeout=15, allow_redirects=True)
                     if response.status_code == 200:
                         url_used = url
                         logger.info(f"✓ Sucesso após mudar referer: {url}")
                         break
+                    
+                    # Estratégia 2: User-Agent diferente
+                    session.headers.update({
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Referer': 'https://urlebird.com/pt/',
+                        'Origin': 'https://urlebird.com'
+                    })
+                    import time
+                    time.sleep(2)
+                    response = session.get(url, timeout=15, allow_redirects=True)
+                    if response.status_code == 200:
+                        url_used = url
+                        logger.info(f"✓ Sucesso com User-Agent alternativo: {url}")
+                        break
+                    
+                    # Se ainda falhar, continuar para próxima URL ou retornar erro
+                    logger.error(f"Todas as estratégias falharam para {url}")
                     continue
                 else:
                     logger.warning(f"Status {response.status_code} em {url}")
