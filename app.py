@@ -730,6 +730,146 @@ def get_latest_video_url_from_channel_browseruse(username):
         logger.debug(traceback.format_exc())
         return None, None, None, error_msg
 
+def get_latest_video_url_from_channel_seleniumbase(username):
+    """Extrai a URL do vídeo mais recente usando SeleniumBase com Undetected ChromeDriver
+    
+    Método avançado conforme guia Cloudflare: Method #5 - Implement Fortified Headless Browsers
+    Usa SeleniumBase com UC (Undetected ChromeDriver) para bypass eficaz do Cloudflare.
+    
+    Retorna: (tiktok_url, urlebird_video_url, channel_data, error)
+    """
+    if not SELENIUMBASE_AVAILABLE:
+        return None, None, None, "SeleniumBase não está instalado. Execute: pip install seleniumbase"
+    
+    if not BEAUTIFULSOUP_AVAILABLE:
+        return None, None, None, "BeautifulSoup4 não está instalado"
+    
+    driver = None
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        url = f"https://urlebird.com/pt/user/{username}/"
+        logger.info(f"Buscando vídeo mais recente de @{username} via SeleniumBase (UC)...")
+        
+        # SeleniumBase com UC (Undetected ChromeDriver) - método recomendado pelo guia
+        driver = Driver(uc=True, headless=True)
+        
+        # Usar uc_open_with_reconnect para melhor handling de desafios Cloudflare
+        driver.uc_open_with_reconnect(url, reconnect_time=4)
+        
+        # Aguardar resolução de desafios Cloudflare
+        import time
+        max_wait = 60
+        start_time = time.time()
+        challenge_resolved = False
+        
+        while time.time() - start_time < max_wait:
+            try:
+                page_source_lower = driver.page_source.lower()
+                page_title = driver.title.lower()
+                
+                # Verificar se ainda está em página de desafio
+                if ('challenge' in page_source_lower or 
+                    'checking your browser' in page_source_lower or 
+                    'just a moment' in page_source_lower or
+                    'um momento' in page_title or
+                    'please wait' in page_title):
+                    elapsed = int(time.time() - start_time)
+                    logger.debug(f"Desafio Cloudflare detectado, aguardando resolução... ({elapsed}s/{max_wait}s)")
+                    time.sleep(2)
+                    continue
+                
+                # Verificar se conteúdo real carregou
+                if '/video/' in driver.page_source or 'follower' in page_source_lower:
+                    elapsed = int(time.time() - start_time)
+                    logger.info(f"✓ Página carregada e desafio resolvido! ({elapsed}s)")
+                    challenge_resolved = True
+                    break
+                    
+                time.sleep(1)
+            except Exception as e:
+                logger.debug(f"Erro durante espera: {e}")
+                time.sleep(1)
+                continue
+        
+        if not challenge_resolved:
+            elapsed = int(time.time() - start_time)
+            logger.warning(f"Timeout aguardando resolução após {elapsed}s, continuando mesmo assim...")
+        
+        # Tentar resolver CAPTCHA Turnstile se presente
+        try:
+            driver.uc_gui_click_captcha()
+            time.sleep(5)
+        except Exception:
+            pass  # CAPTCHA não encontrado ou já resolvido
+        
+        # Aguardar mais um pouco para garantir carregamento completo
+        time.sleep(3)
+        
+        # Verificar se foi bloqueado
+        page_source = driver.page_source
+        if "403" in page_source or "Forbidden" in page_source or "blocked" in page_source.lower():
+            return None, None, None, "Página bloqueada pelo Cloudflare (403 Forbidden)"
+        
+        # Obter HTML da página
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Extrair dados do canal
+        channel_data = get_channel_data(username, soup)
+        
+        # Procurar primeiro link de vídeo
+        latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
+        
+        if latest_video_element:
+            urlebird_video_url = latest_video_element.get('href', '')
+            
+            # Garantir URL completa
+            base_url = 'https://urlebird.com'
+            if urlebird_video_url.startswith('/'):
+                urlebird_video_url = f"{base_url}{urlebird_video_url}"
+            elif not urlebird_video_url.startswith('http'):
+                urlebird_video_url = f"{base_url}/{urlebird_video_url}"
+            
+            # Extrair ID do vídeo
+            video_id_match = re.search(r'/video/[^/]+-(\d+)', urlebird_video_url)
+            if video_id_match:
+                video_id = video_id_match.group(1)
+                tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+            else:
+                # Tentar extrair de outra forma
+                parts = urlebird_video_url.rstrip('/').split('/')
+                if len(parts) > 0:
+                    last_part = parts[-1]
+                    video_id_match = re.search(r'(\d+)', last_part)
+                    if video_id_match:
+                        video_id = video_id_match.group(1)
+                        tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                    else:
+                        tiktok_url = None
+                else:
+                    tiktok_url = None
+            
+            logger.info(f"✓ Vídeo mais recente encontrado via SeleniumBase: {tiktok_url}")
+            return tiktok_url, urlebird_video_url, channel_data, None
+        else:
+            return None, None, channel_data, f"Nenhum vídeo encontrado para @{username}"
+            
+    except Exception as e:
+        error_msg = f"Erro ao usar SeleniumBase: {str(e)}"
+        logger.error(error_msg)
+        import traceback
+        logger.debug(traceback.format_exc())
+        return None, None, None, error_msg
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+
 def get_latest_video_url_from_channel_countik(username):
     """Extrai a URL do vídeo mais recente usando Countik (scraping)
     
