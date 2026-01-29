@@ -33,6 +33,15 @@ except ImportError:
     SELENIUM_AVAILABLE = False
     uc = None
 
+# Importar SeleniumBase (método mais avançado conforme guia Cloudflare)
+try:
+    from seleniumbase import Driver
+    SELENIUMBASE_AVAILABLE = True
+except ImportError:
+    logger.info("SeleniumBase não está instalado. Usando undetected-chromedriver padrão.")
+    SELENIUMBASE_AVAILABLE = False
+    Driver = None
+
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para n8n
 
@@ -662,9 +671,18 @@ def get_latest_video_url_from_channel(username):
         logger.info("✓ Sucesso com Countik")
         return result
     
-    logger.warning("Countik falhou, tentando Urlebird com Selenium...")
+    logger.warning("Countik falhou, tentando Urlebird com SeleniumBase...")
     
-    # Método 3: Tentar Urlebird com Selenium (anti-detecção)
+    # Método 3: Tentar Urlebird com SeleniumBase (método mais avançado - conforme guia Cloudflare)
+    if SELENIUMBASE_AVAILABLE:
+        logger.info("Tentando método SeleniumBase (método avançado conforme guia Cloudflare)...")
+        result = get_latest_video_url_from_channel_seleniumbase(username)
+        if result[0] is not None:  # Se obteve sucesso
+            logger.info("✓ Sucesso com Urlebird (SeleniumBase)")
+            return result
+        logger.warning("SeleniumBase falhou, tentando Selenium padrão...")
+    
+    # Método 4: Tentar Urlebird com Selenium padrão (anti-detecção)
     if SELENIUM_AVAILABLE:
         logger.info("Tentando método Selenium (anti-detecção)...")
         result = get_latest_video_url_from_channel_selenium(username)
@@ -673,7 +691,7 @@ def get_latest_video_url_from_channel(username):
             return result
         logger.warning("Selenium falhou, tentando método requests...")
     
-    # Método 4: Fallback para método requests (Urlebird)
+    # Método 5: Fallback para método requests (Urlebird)
     if not BEAUTIFULSOUP_AVAILABLE:
         return None, None, None, "BeautifulSoup4 não está instalado"
     
