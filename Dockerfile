@@ -2,64 +2,35 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instalar dependências do sistema (ffmpeg + Chrome para Selenium)
+# Instalar dependências do sistema
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    wget \
-    gnupg \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libc6 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libexpat1 \
-    libfontconfig1 \
-    libgbm1 \
-    libgcc1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libstdc++6 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    lsb-release \
-    xdg-utils \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
+    gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements e instalar dependências Python
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Garantir versão atualizada do yt-dlp
-RUN pip install --no-cache-dir --upgrade yt-dlp
+# Copiar código da aplicação
+COPY app.py .
 
-# Copiar aplicação
-COPY . .
+# Criar diretório de downloads com permissões corretas
+RUN mkdir -p /app/downloads && chmod 755 /app/downloads
 
-# Criar diretórios (downloads em /content-downloads no Docker, para n8n)
-RUN mkdir -p /app/downloads /app/data /content-downloads
+# Expor porta
+EXPOSE 5000
 
-# Executar
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Usuário não-root para segurança (1000:1000 compatível com n8n)
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+# Health check (curl já está instalado acima)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# Comando para rodar a aplicação
+CMD ["python", "app.py"]
+

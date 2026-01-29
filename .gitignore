@@ -4,23 +4,33 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
 env/
+venv/
 ENV/
-.venv
-
-# Ambiente
-.env
-.env.local
-.env.*.local
-
-# Downloads e Logs
+build/
+develop-eggs/
+dist/
 downloads/
-logs/
-data/
-*.log
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# IDEs
+# Downloads
+downloads/
+*.mp4
+*.webm
+*.mkv
+*.mp3
+
+# IDE
 .vscode/
 .idea/
 *.swp
@@ -31,15 +41,7 @@ data/
 .DS_Store
 Thumbs.db
 
-# Docker
-.dockerignore
-
-# Testes
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Arquivos temporários
-*.tmp
-*.bak
-*.swp
+# Node (mantido do projeto anterior)
+node_modules/
+package-lock.json
+storageState.json
