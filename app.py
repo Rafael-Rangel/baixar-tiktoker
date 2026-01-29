@@ -1878,24 +1878,81 @@ def download_video_via_urlebird(url_or_username):
         logger.warning(error_msg)
         return None, error_msg
 
+def load_optimized_services_order():
+    """Carrega ordem otimizada dos serviços baseada em testes anteriores"""
+    services_order_file = os.path.join(os.path.dirname(__file__), 'services_order.json')
+    
+    if os.path.exists(services_order_file):
+        try:
+            with open(services_order_file, 'r') as f:
+                data = json.load(f)
+                working_services = data.get('working_services', [])
+                logger.info(f"Ordem otimizada carregada: {', '.join(working_services)}")
+                return working_services
+        except Exception as e:
+            logger.debug(f"Erro ao carregar ordem otimizada: {e}")
+    
+    return []
+
+def get_services_list():
+    """Retorna lista de serviços ordenada por confiabilidade (baseada em testes)"""
+    # Mapeamento de nomes para objetos
+    service_map = {
+        'Snaptik': ('Snaptik', snaptik, True, False),
+        'Tikmate': ('Tikmate', Tikmate, False, False),
+        'SSStik': ('SSStik', ssstik, True, False),
+        'TTDownloader': ('TTDownloader', ttdownloader, True, False),
+        'TikWM': ('TikWM', tikwm, True, False),
+        'MusicallyDown': ('MusicallyDown', mdown, True, False),
+        'Tikdown': ('Tikdown', tikdown, True, False),
+    }
+    
+    # Ordem padrão (fallback se não houver ordem otimizada)
+    default_order = [
+        'Snaptik',
+        'Tikmate',
+        'SSStik',
+        'TTDownloader',
+        'TikWM',
+        'MusicallyDown',
+        'Tikdown',
+    ]
+    
+    # Carregar ordem otimizada
+    optimized_order = load_optimized_services_order()
+    
+    # Combinar: serviços que funcionaram primeiro, depois os demais
+    if optimized_order:
+        # Serviços que funcionaram (na ordem que funcionaram)
+        working_list = [service_map[name] for name in optimized_order if name in service_map]
+        
+        # Serviços que não foram testados ou não funcionaram (ordem padrão)
+        remaining = [name for name in default_order if name not in optimized_order]
+        remaining_list = [service_map[name] for name in remaining if name in service_map]
+        
+        # Combinar: funcionando primeiro, depois os demais
+        services = working_list + remaining_list
+    else:
+        # Usar ordem padrão se não houver ordem otimizada
+        services = [service_map[name] for name in default_order if name in service_map]
+    
+    # Sempre adicionar Urlebird como último fallback
+    services.append(('Urlebird', None, False, True))
+    
+    return services
+
 def download_tiktok_video(url):
-    """Baixa vídeo do TikTok usando tiktok-downloader"""
+    """Baixa vídeo do TikTok usando tiktok-downloader
+    
+    Usa ordem otimizada baseada em testes anteriores.
+    Serviços que funcionaram primeiro são tentados primeiro.
+    """
     
     if not TIKTOK_DOWNLOADER_AVAILABLE:
         return None, "Biblioteca tiktok-downloader não está instalada. Execute: pip install tiktok_downloader"
     
-    # Lista de serviços para tentar (em ordem de prioridade)
-    # Format: (name, service_callable, is_function, is_urlebird)
-    services = [
-        ('Snaptik', snaptik, True, False),
-        ('Tikmate', Tikmate, False, False),
-        ('SSStik', ssstik, True, False),
-        ('TTDownloader', ttdownloader, True, False),
-        ('TikWM', tikwm, True, False),
-        ('MusicallyDown', mdown, True, False),
-        ('Tikdown', tikdown, True, False),
-        ('Urlebird', None, False, True),  # Último método - fallback
-    ]
+    # Carregar lista de serviços ordenada por confiabilidade
+    services = get_services_list()
     
     downloaded_file = None
     last_error = None

@@ -1,0 +1,15 @@
+{
+  "last_updated": "2026-01-29T17:21:39.878190",
+  "working_services": [
+    "Snaptik",
+    "TTDownloader",
+    "TikWM",
+    "MusicallyDown"
+  ],
+  "failed_services": [
+    "Tikmate",
+    "SSStik",
+    "Tikdown"
+  ],
+  "total_tested": 7
+}
