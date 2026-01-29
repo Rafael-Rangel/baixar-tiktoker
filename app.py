@@ -378,22 +378,205 @@ def get_latest_video_url_from_channel_selenium(username):
             except:
                 pass
 
-def get_latest_video_url_from_channel(username):
-    """Extrai a URL do vídeo mais recente e dados do canal usando Urlebird
+def get_latest_video_url_from_channel_tikwm(username):
+    """Extrai a URL do vídeo mais recente usando TikWM API
     
-    Tenta primeiro com Selenium (anti-detecção), depois com requests.
     Retorna: (tiktok_url, urlebird_video_url, channel_data, error)
+    """
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        logger.info(f"Tentando TikWM API para @{username}...")
+        
+        # TikWM API endpoint para listar vídeos de um usuário
+        api_url = f"https://www.tikwm.com/api/user/posts"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+        
+        payload = {
+            'unique_id': username,
+            'count': 1  # Apenas o mais recente
+        }
+        
+        response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data.get('code') == 0 and 'data' in data and 'videos' in data['data']:
+                videos = data['data']['videos']
+                if videos and len(videos) > 0:
+                    latest_video = videos[0]
+                    
+                    # Extrair informações do vídeo
+                    video_id = latest_video.get('video_id', '')
+                    tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                    
+                    # Criar URL do TikWM para o vídeo (similar ao Urlebird)
+                    tikwm_video_url = f"https://www.tikwm.com/video/{video_id}"
+                    
+                    # Extrair dados do canal
+                    channel_data = {
+                        'username': username,
+                        'followers': data['data'].get('followerCount', 'N/A'),
+                        'total_likes': data['data'].get('heartCount', 'N/A'),
+                        'videos_posted': data['data'].get('videoCount', 'N/A')
+                    }
+                    
+                    logger.info(f"✓ Vídeo mais recente encontrado via TikWM: {tiktok_url}")
+                    return tiktok_url, tikwm_video_url, channel_data, None
+                else:
+                    return None, None, None, f"Nenhum vídeo encontrado para @{username}"
+            else:
+                error_msg = data.get('msg', 'Erro desconhecido da API TikWM')
+                return None, None, None, f"Erro TikWM: {error_msg}"
+        else:
+            return None, None, None, f"Erro HTTP {response.status_code} ao acessar TikWM"
+            
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Erro ao acessar TikWM: {str(e)}"
+        logger.warning(error_msg)
+        return None, None, None, error_msg
+    except Exception as e:
+        error_msg = f"Erro ao processar resposta TikWM: {str(e)}"
+        logger.warning(error_msg)
+        return None, None, None, error_msg
+
+def get_latest_video_url_from_channel_countik(username):
+    """Extrai a URL do vídeo mais recente usando Countik (scraping)
+    
+    Retorna: (tiktok_url, countik_video_url, channel_data, error)
     """
     if not BEAUTIFULSOUP_AVAILABLE:
         return None, None, None, "BeautifulSoup4 não está instalado"
     
-    # Tentar primeiro com Selenium (mais confiável contra bloqueios)
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        logger.info(f"Tentando Countik para @{username}...")
+        
+        url = f"https://countik.com/user/{username}"
+        
+        session = requests.Session()
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://www.google.com/',
+            'Origin': 'https://www.google.com',
+        }
+        session.headers.update(headers)
+        
+        # Acessar página inicial primeiro para obter cookies
+        session.get('https://countik.com/', timeout=10)
+        time.sleep(1)
+        
+        # Acessar perfil do usuário
+        response = session.get(url, timeout=15)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Procurar primeiro link de vídeo
+            latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
+            
+            if latest_video_element:
+                countik_video_url = latest_video_element.get('href', '')
+                
+                # Garantir URL completa
+                if countik_video_url.startswith('/'):
+                    countik_video_url = f"https://countik.com{countik_video_url}"
+                elif not countik_video_url.startswith('http'):
+                    countik_video_url = f"https://countik.com/{countik_video_url}"
+                
+                # Extrair ID do vídeo
+                video_id_match = re.search(r'/video/[^/]+-(\d+)', countik_video_url)
+                if video_id_match:
+                    video_id = video_id_match.group(1)
+                    tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                else:
+                    # Tentar extrair de outra forma
+                    parts = countik_video_url.rstrip('/').split('/')
+                    if len(parts) > 0:
+                        last_part = parts[-1]
+                        video_id_match = re.search(r'(\d+)', last_part)
+                        if video_id_match:
+                            video_id = video_id_match.group(1)
+                            tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                        else:
+                            tiktok_url = None
+                    else:
+                        tiktok_url = None
+                
+                # Extrair dados do canal (se disponível)
+                channel_data = get_channel_data(username, soup)
+                
+                logger.info(f"✓ Vídeo mais recente encontrado via Countik: {tiktok_url}")
+                return tiktok_url, countik_video_url, channel_data, None
+            else:
+                return None, None, None, f"Nenhum vídeo encontrado para @{username}"
+        else:
+            return None, None, None, f"Erro HTTP {response.status_code} ao acessar Countik"
+            
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Erro ao acessar Countik: {str(e)}"
+        logger.warning(error_msg)
+        return None, None, None, error_msg
+    except Exception as e:
+        error_msg = f"Erro ao processar Countik: {str(e)}"
+        logger.warning(error_msg)
+        return None, None, None, error_msg
+
+def get_latest_video_url_from_channel(username):
+    """Extrai a URL do vídeo mais recente e dados do canal
+    
+    Tenta múltiplas alternativas na seguinte ordem:
+    1. TikWM API (mais rápido e confiável)
+    2. Countik (scraping alternativo)
+    3. Urlebird com Selenium (anti-detecção)
+    4. Urlebird com requests (fallback)
+    
+    Retorna: (tiktok_url, service_video_url, channel_data, error)
+    """
+    # Método 1: Tentar TikWM API primeiro (mais rápido e confiável)
+    logger.info(f"Tentando obter último vídeo de @{username}...")
+    result = get_latest_video_url_from_channel_tikwm(username)
+    if result[0] is not None:  # Se obteve sucesso
+        logger.info("✓ Sucesso com TikWM API")
+        return result
+    
+    logger.warning("TikWM falhou, tentando Countik...")
+    
+    # Método 2: Tentar Countik
+    result = get_latest_video_url_from_channel_countik(username)
+    if result[0] is not None:
+        logger.info("✓ Sucesso com Countik")
+        return result
+    
+    logger.warning("Countik falhou, tentando Urlebird com Selenium...")
+    
+    # Método 3: Tentar Urlebird com Selenium (anti-detecção)
     if SELENIUM_AVAILABLE:
         logger.info("Tentando método Selenium (anti-detecção)...")
         result = get_latest_video_url_from_channel_selenium(username)
         if result[0] is not None:  # Se obteve sucesso
+            logger.info("✓ Sucesso com Urlebird (Selenium)")
             return result
         logger.warning("Selenium falhou, tentando método requests...")
+    
+    # Método 4: Fallback para método requests (Urlebird)
+    if not BEAUTIFULSOUP_AVAILABLE:
+        return None, None, None, "BeautifulSoup4 não está instalado"
+    
+    logger.info("Tentando Urlebird com requests (último recurso)...")
     
     # Fallback para método requests
     try:
