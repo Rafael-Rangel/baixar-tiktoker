@@ -15,3 +15,7 @@ __pycache__/
 # Downloads
 downloads/
 *.mp4
+
+# Playwright context (cookies sensíveis)
+.playwright_context/
+urlebird_storage.json
