@@ -274,10 +274,10 @@ def get_video_details_from_urlebird(urlebird_video_url):
         return None, "BeautifulSoup4 não está instalado"
     
     try:
-        # Headers mais realistas para evitar bloqueio
+        # Headers mais realistas para evitar bloqueio - simular navegador real
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
@@ -286,11 +286,25 @@ def get_video_details_from_urlebird(urlebird_video_url):
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
             'Cache-Control': 'max-age=0',
-            'Referer': 'https://urlebird.com/'
+            'Referer': urlebird_video_url.rsplit('/', 2)[0] + '/' if '/' in urlebird_video_url else 'https://urlebird.com/'
         }
         
-        response = requests.get(urlebird_video_url, headers=headers, timeout=15, allow_redirects=True)
+        # Criar sessão para manter cookies
+        session = requests.Session()
+        session.headers.update(headers)
+        
+        # Tentar obter cookies primeiro
+        try:
+            base_url = urlebird_video_url.rsplit('/', 3)[0] if '/' in urlebird_video_url else 'https://urlebird.com'
+            session.get(base_url + '/', timeout=10)
+            import time
+            time.sleep(0.5)
+        except:
+            pass
+        
+        response = session.get(urlebird_video_url, timeout=15, allow_redirects=True)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
