@@ -829,7 +829,7 @@ def get_latest_videos():
             logger.info(f"Buscando últimos vídeos de {len(channels)} canal(is)...")
             
             for channel in channels:
-            username = validate_username(channel)
+                username = validate_username(channel)
             if not username:
                 results.append({
                     'channel': channel,
