@@ -147,7 +147,8 @@ def get_latest_video_url_from_channel_selenium(username):
         options.add_argument('--window-size=1920,1080')
         options.add_argument('--start-maximized')
         options.add_argument('--lang=pt-BR')
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        # Removido excludeSwitches - não é suportado em todas as versões
+        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
         
         # User-Agent realista
@@ -202,6 +203,55 @@ def get_latest_video_url_from_channel_selenium(username):
                 });
             '''
         })
+        
+        # Carregar cookies se disponível (para bypass Cloudflare)
+        cookies_file = os.getenv('COOKIES_FILE', '/app/cookies.txt')
+        if os.path.exists(cookies_file):
+            try:
+                logger.info("Carregando cookies para bypass Cloudflare...")
+                # Primeiro acessar o domínio para poder adicionar cookies
+                driver.get('https://urlebird.com/')
+                import time
+                time.sleep(2)
+                
+                # Ler cookies do arquivo (formato Netscape)
+                cookies_loaded = 0
+                with open(cookies_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        
+                        # Formato Netscape: domain, flag, path, secure, expiration, name, value
+                        parts = line.split('\t')
+                        if len(parts) >= 7:
+                            try:
+                                cookie_domain = parts[0]
+                                cookie_path = parts[2]
+                                cookie_secure = parts[3] == 'TRUE'
+                                cookie_name = parts[5]
+                                cookie_value = parts[6]
+                                
+                                # Só adicionar cookies do domínio urlebird.com
+                                if 'urlebird.com' in cookie_domain:
+                                    driver.add_cookie({
+                                        'name': cookie_name,
+                                        'value': cookie_value,
+                                        'domain': cookie_domain,
+                                        'path': cookie_path,
+                                        'secure': cookie_secure
+                                    })
+                                    cookies_loaded += 1
+                            except Exception as e:
+                                logger.debug(f"Erro ao processar cookie: {e}")
+                                continue
+                
+                if cookies_loaded > 0:
+                    logger.info(f"✓ {cookies_loaded} cookie(s) carregado(s)")
+                else:
+                    logger.warning("Nenhum cookie válido encontrado no arquivo")
+            except Exception as e:
+                logger.warning(f"Erro ao carregar cookies: {e}")
         
         # Acessar página
         logger.info(f"Acessando: {url}")

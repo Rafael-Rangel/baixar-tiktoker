@@ -86,18 +86,26 @@ def test_urlebird_selenium(username, headless=False):
         if not chrome_binary:
             print("   ⚠ Chrome não encontrado, undetected-chromedriver tentará auto-detectar...")
         
-        # Criar driver - undetected-chromedriver vai tentar encontrar Chrome automaticamente
+        # Criar driver - sempre especificar binary_location se encontrado
         try:
-            if chrome_binary:
+            if chrome_binary and os.path.exists(chrome_binary):
+                options.binary_location = chrome_binary
+                print(f"   Usando Chrome em: {chrome_binary}")
                 driver = uc.Chrome(options=options, use_subprocess=True)
             else:
-                # Tentar sem especificar binary_location - auto-detectar
-                driver = uc.Chrome(use_subprocess=True)
+                print("   Tentando auto-detectar Chrome (pode demorar)...")
+                # Criar novas opções sem binary_location para evitar erro
+                simple_options = uc.ChromeOptions()
+                simple_options.add_argument('--no-sandbox')
+                simple_options.add_argument('--disable-dev-shm-usage')
+                driver = uc.Chrome(options=simple_options, use_subprocess=True)
         except Exception as e:
-            print(f"   ❌ Erro ao criar driver: {e}")
-            print("   Tentando método alternativo...")
-            # Tentar método mais simples sem opções
-            driver = uc.Chrome()
+            print(f"   ❌ Erro: {e}")
+            print("   Tentando método mais simples...")
+            # Última tentativa - deixar undetected-chromedriver fazer tudo
+            import traceback
+            traceback.print_exc()
+            raise
         
         print("✅ Driver criado com sucesso!\n")
         

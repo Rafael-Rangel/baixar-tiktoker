@@ -26,6 +26,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar código da aplicação
 COPY app.py .
 
+# Criar arquivo de cookies (opcional - pode ser montado via volume)
+RUN touch /app/cookies.txt && chmod 644 /app/cookies.txt
+
 # Criar diretório de downloads com permissões corretas
 RUN mkdir -p /app/downloads && chmod 755 /app/downloads
 
