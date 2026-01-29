@@ -8,4 +8,7 @@ selenium>=4.15.0
 undetected-chromedriver>=3.5.4
 selenium-stealth>=1.0.6
 seleniumbase>=4.21.0
+browser-use>=0.11.5
+playwright>=1.57.0
+playwright-stealth>=1.0.6
 

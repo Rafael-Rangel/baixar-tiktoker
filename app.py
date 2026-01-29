@@ -1,6 +1,8 @@
 import os
 import uuid
 import re
+import random
+import json
 import requests
 import http.cookiejar as cookiejar
 from flask import Flask, request, send_file, jsonify
@@ -41,6 +43,35 @@ except ImportError:
     logger.info("SeleniumBase não está instalado. Usando undetected-chromedriver padrão.")
     SELENIUMBASE_AVAILABLE = False
     Driver = None
+
+# Importar Browser Use (Agent-based browser automation)
+try:
+    from browser_use import Agent, Browser, ChatBrowserUse
+    import asyncio
+    BROWSER_USE_AVAILABLE = True
+except ImportError:
+    logger.info("Browser Use não está instalado. Execute: pip install browser-use")
+    BROWSER_USE_AVAILABLE = False
+    Agent = Browser = ChatBrowserUse = None
+    asyncio = None
+
+# Importar Playwright com Stealth (método recomendado pelo Manus para bypass Cloudflare)
+try:
+    from playwright.async_api import async_playwright
+    try:
+        from playwright_stealth.stealth import Stealth
+        PLAYWRIGHT_STEALTH_AVAILABLE = True
+    except ImportError:
+        logger.info("playwright-stealth não está instalado. Execute: pip install playwright-stealth")
+        PLAYWRIGHT_STEALTH_AVAILABLE = False
+        Stealth = None
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    logger.info("Playwright não está instalado. Execute: pip install playwright")
+    PLAYWRIGHT_AVAILABLE = False
+    async_playwright = None
+    Stealth = None
+    PLAYWRIGHT_STEALTH_AVAILABLE = False
 
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para n8n
@@ -549,6 +580,156 @@ def get_latest_video_url_from_channel_tikwm(username):
         logger.warning(error_msg)
         return None, None, None, error_msg
 
+def get_latest_video_url_from_channel_browseruse(username):
+    """Extrai a URL do vídeo mais recente usando Browser Use (Agent-based)
+    
+    Browser Use usa Agent com LLM para navegação inteligente e bypass automático de Cloudflare
+    
+    Retorna: (tiktok_url, urlebird_video_url, channel_data, error)
+    """
+    if not BROWSER_USE_AVAILABLE:
+        return None, None, None, "Browser Use não está instalado. Execute: pip install browser-use"
+    
+    if not BEAUTIFULSOUP_AVAILABLE:
+        return None, None, None, "BeautifulSoup4 não está instalado"
+    
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        logger.info(f"Tentando Browser Use para @{username}...")
+        
+        url = f"https://urlebird.com/pt/user/{username}/"
+        
+        # Função assíncrona interna para usar Browser Use
+        async def run_browser_use_agent():
+            try:
+                # Criar Browser instance (pode usar use_cloud=True para stealth mode se tiver API key)
+                browser_use_api_key = os.getenv('BROWSER_USE_API_KEY', None)
+                use_cloud = browser_use_api_key is not None
+                
+                browser = Browser(
+                    use_cloud=use_cloud,
+                    headless=True  # Modo headless para produção
+                )
+                
+                # Criar LLM (ChatBrowserUse requer API key, senão usar outro LLM ou modo local)
+                if browser_use_api_key:
+                    llm = ChatBrowserUse()
+                    
+                    # Criar Agent com task específica
+                    task = f"Navigate to {url}, wait for Cloudflare challenges to resolve, and extract the HTML content. Find the first video link on the page."
+                    
+                    agent = Agent(
+                        task=task,
+                        llm=llm,
+                        browser=browser,
+                    )
+                    
+                    history = await agent.run()
+                    
+                    # Tentar obter HTML do browser
+                    if hasattr(browser, 'page'):
+                        html = await browser.page.content()
+                    else:
+                        html = str(history) if history else None
+                    
+                    await browser.close()
+                    return html
+                else:
+                    # Modo local - usar Playwright diretamente sem Agent
+                    from playwright.async_api import async_playwright
+                    playwright = await async_playwright().start()
+                    browser_instance = await playwright.chromium.launch(headless=True)
+                    page = await browser_instance.new_page()
+                    
+                    # Navegar até a URL
+                    await page.goto(url, wait_until='networkidle', timeout=60000)
+                    
+                    # Aguardar resolução de desafios Cloudflare
+                    import time as time_module
+                    max_wait = 60
+                    start_time = time_module.time()
+                    
+                    while time_module.time() - start_time < max_wait:
+                        content = await page.content()
+                        if '/video/' in content or 'follower' in content.lower():
+                            break
+                        await page.wait_for_timeout(2000)
+                    
+                    # Obter HTML
+                    html = await page.content()
+                    await browser_instance.close()
+                    await playwright.stop()
+                    
+                    return html
+                
+            except Exception as e:
+                logger.error(f"Erro no Browser Use Agent: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                return None
+        
+        # Executar função assíncrona
+        html = asyncio.run(run_browser_use_agent())
+        
+        if not html:
+            return None, None, None, "Não foi possível obter HTML da página"
+        
+        # Parsear HTML com BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Verificar se foi bloqueado
+        if "403" in html or "Forbidden" in html or "blocked" in html.lower():
+            return None, None, None, "Página bloqueada pelo Cloudflare (403 Forbidden)"
+        
+        # Extrair dados do canal
+        channel_data = get_channel_data(username, soup)
+        
+        # Procurar primeiro link de vídeo
+        latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
+        
+        if latest_video_element:
+            urlebird_video_url = latest_video_element.get('href', '')
+            
+            # Garantir URL completa
+            base_url = 'https://urlebird.com'
+            if urlebird_video_url.startswith('/'):
+                urlebird_video_url = f"{base_url}{urlebird_video_url}"
+            elif not urlebird_video_url.startswith('http'):
+                urlebird_video_url = f"{base_url}/{urlebird_video_url}"
+            
+            # Extrair ID do vídeo
+            video_id_match = re.search(r'/video/[^/]+-(\d+)', urlebird_video_url)
+            if video_id_match:
+                video_id = video_id_match.group(1)
+                tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+            else:
+                parts = urlebird_video_url.rstrip('/').split('/')
+                if len(parts) > 0:
+                    last_part = parts[-1]
+                    video_id_match = re.search(r'(\d+)', last_part)
+                    if video_id_match:
+                        video_id = video_id_match.group(1)
+                        tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                    else:
+                        tiktok_url = None
+                else:
+                    tiktok_url = None
+            
+            logger.info(f"✓ Vídeo mais recente encontrado via Browser Use: {tiktok_url}")
+            return tiktok_url, urlebird_video_url, channel_data, None
+        else:
+            return None, None, channel_data, f"Nenhum vídeo encontrado para @{username}"
+            
+    except Exception as e:
+        error_msg = f"Erro ao usar Browser Use: {str(e)}"
+        logger.error(error_msg)
+        import traceback
+        logger.debug(traceback.format_exc())
+        return None, None, None, error_msg
+
 def get_latest_video_url_from_channel_countik(username):
     """Extrai a URL do vídeo mais recente usando Countik (scraping)
     
@@ -636,6 +817,267 @@ def get_latest_video_url_from_channel_countik(username):
         logger.warning(error_msg)
         return None, None, None, error_msg
 
+def get_latest_video_url_from_channel_playwright(username):
+    """Extrai a URL do vídeo mais recente usando Playwright + Stealth (método do Manus)
+    
+    Este método usa Playwright com playwright-stealth para bypass eficaz do Cloudflare.
+    Baseado no código oficial do Manus que conseguiu acessar o Urlebird com sucesso.
+    
+    Retorna: (tiktok_url, urlebird_video_url, channel_data, error)
+    """
+    if not PLAYWRIGHT_AVAILABLE or not PLAYWRIGHT_STEALTH_AVAILABLE:
+        return None, None, None, "Playwright ou playwright-stealth não está instalado. Execute: pip install playwright playwright-stealth && playwright install chromium"
+    
+    if not BEAUTIFULSOUP_AVAILABLE:
+        return None, None, None, "BeautifulSoup4 não está instalado"
+    
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        logger.info(f"Tentando Playwright + Stealth para @{username}...")
+        
+        url = f"https://urlebird.com/pt/user/{username}/"
+        
+        # Função assíncrona interna usando Playwright + Stealth
+        async def run_playwright_stealth():
+            try:
+                async with async_playwright() as p:
+                    # Lançar navegador Chromium com modo headless=new (muito mais difícil de detectar)
+                    # O modo headless=new se comporta exatamente como navegador com tela
+                    browser = await p.chromium.launch(
+                        headless=True,  # Playwright usa headless=new automaticamente quando headless=True
+                        args=[
+                            '--disable-blink-features=AutomationControlled',
+                            '--disable-dev-shm-usage',
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--use-gl=egl',  # Emular GPU para WebGL (Manus: "emulo uma GPU real")
+                            '--enable-webgl',
+                            '--enable-accelerated-2d-canvas'
+                        ]
+                    )
+                    
+                    # Criar contexto com configurações realistas e persistent storage
+                    # Persistent context ajuda a manter cookies entre sessões
+                    context_storage_path = os.path.join(os.getcwd(), '.playwright_context')
+                    os.makedirs(context_storage_path, exist_ok=True)
+                    
+                    # Tentar carregar cookies salvos de sessão anterior (incluindo cf_clearance)
+                    # Manus: "Use context.storage_state(path='state.json') para salvar cookies"
+                    storage_file = os.path.join(context_storage_path, 'urlebird_storage.json')
+                    storage_state = None
+                    if os.path.exists(storage_file):
+                        try:
+                            with open(storage_file, 'r') as f:
+                                storage_state = json.load(f)
+                            logger.info("Cookies anteriores carregados (incluindo cf_clearance se disponível)")
+                        except Exception as e:
+                            logger.debug(f"Erro ao carregar cookies: {e}")
+                    else:
+                        logger.info("Nenhum cookie salvo encontrado. Execute setup_session.py para criar sessão inicial")
+                    
+                    # User-Agent sincronizado com SO (Manus: "Case o User-Agent com o SO da sua VPS")
+                    # Como é VPS Linux, usar User-Agent de Linux para evitar inconsistência TCP/IP Fingerprint
+                    user_agents = [
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",  # Exato do Manus
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                    ]
+                    selected_ua = random.choice(user_agents)
+                    
+                    context = await browser.new_context(
+                        user_agent=selected_ua,
+                        viewport={'width': 1920, 'height': 1080},  # Resolução comum
+                        locale="pt-BR",
+                        timezone_id="America/Sao_Paulo",
+                        permissions=["geolocation"],
+                        geolocation={"latitude": -23.5505, "longitude": -46.6333},  # São Paulo
+                        color_scheme="light",
+                        # Persistent storage para cookies (carregar se existir)
+                        # Manus: "Carregue esse arquivo: browser.new_context(storage_state='state.json')"
+                        storage_state=storage_state,
+                        # Configurações extras para parecer mais real
+                        device_scale_factor=1,
+                        has_touch=False,
+                        is_mobile=False,
+                        java_script_enabled=True,
+                        # Manus: "garanta que o webgl não esteja desativado"
+                        ignore_https_errors=False
+                    )
+                    
+                    page = await context.new_page()
+                    
+                    # APLICAR STEALTH (o segredo do bypass do Cloudflare)
+                    stealth = Stealth()
+                    await stealth.apply_stealth_async(page)
+                    
+                    # Remover propriedades de automação adicionais
+                    # Manus: "navigator.webdriver = false" e "Consistência de Idioma"
+                    await page.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', {
+                            get: () => undefined
+                        });
+                        Object.defineProperty(navigator, 'plugins', {
+                            get: () => [1, 2, 3, 4, 5]
+                        });
+                        // Manus: "Consistência de Idioma: languages: ['en-US', 'en']"
+                        Object.defineProperty(navigator, 'languages', {
+                            get: () => ['pt-BR', 'pt', 'en-US', 'en']
+                        });
+                        window.navigator.chrome = {
+                            runtime: {}
+                        };
+                        // Remover assinaturas de automação adicionais
+                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+                    """)
+                    
+                    logger.info(f"Acessando {url}...")
+                    
+                    # Manus: "Resolução de Desafios JS: deixe o navegador processar o JavaScript por 2 a 5 segundos"
+                    # Navegar até a URL com wait_until networkidle (como no exemplo do Manus)
+                    await page.goto(url, wait_until="networkidle", timeout=60000)
+                    
+                    # Manus: "O Cloudflare Turnstile geralmente precisa de 3 a 7 segundos para validar"
+                    # Aguardar processamento do Cloudflare
+                    logger.info("Aguardando Cloudflare processar desafio (5 segundos)...")
+                    await asyncio.sleep(5)
+                    
+                    # Aguardar resolução do desafio Cloudflare
+                    logger.info("Aguardando resolução de desafios Cloudflare...")
+                    max_wait = 60  # Máximo de 60 segundos
+                    start_time = asyncio.get_event_loop().time()
+                    
+                    while True:
+                        await asyncio.sleep(2)  # Verificar a cada 2 segundos
+                        page_title = await page.title()
+                        html = await page.content()
+                        elapsed = asyncio.get_event_loop().time() - start_time
+                        
+                        # Simular interações humanas periódicas (movimentos de mouse curvos - Bezier)
+                        if elapsed > 5 and elapsed % 8 < 2:  # A cada ~8 segundos
+                            try:
+                                # Movimento de mouse em curva (Bezier) - mais natural
+                                for i in range(3):
+                                    x = random.randint(100, 800)
+                                    y = random.randint(100, 600)
+                                    await page.mouse.move(x, y, steps=random.randint(10, 20))
+                                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                                
+                                # Scroll suave ocasional
+                                scroll_amount = random.randint(100, 500)
+                                await page.evaluate(f"window.scrollBy({{top: {scroll_amount}, behavior: 'smooth'}})")
+                                await asyncio.sleep(random.uniform(0.5, 1))
+                            except Exception as e:
+                                logger.debug(f"Erro ao simular interação: {e}")
+                        
+                        # Verificar se o desafio foi resolvido
+                        if ("um momento" not in page_title.lower() and 
+                            "checking" not in page_title.lower() and
+                            "challenge" not in html.lower() and
+                            ("/video/" in html or "follower" in html.lower() or username.lower() in html.lower())):
+                            logger.info(f"Desafio Cloudflare resolvido após {elapsed:.1f}s")
+                            
+                            # Salvar cookies para próxima vez (persistent context)
+                            try:
+                                storage_state = await context.storage_state()
+                                storage_file = os.path.join(context_storage_path, 'urlebird_storage.json')
+                                import json
+                                with open(storage_file, 'w') as f:
+                                    json.dump(storage_state, f)
+                                logger.info("Cookies salvos para próxima sessão")
+                            except Exception as e:
+                                logger.debug(f"Erro ao salvar cookies: {e}")
+                            
+                            break
+                        
+                        # Verificar se foi bloqueado
+                        if "403" in html or "Forbidden" in html or "blocked" in html.lower():
+                            logger.warning("Página bloqueada (403 Forbidden)")
+                            break
+                        
+                        # Timeout
+                        if elapsed >= max_wait:
+                            logger.warning(f"Timeout após {max_wait}s aguardando resolução do Cloudflare")
+                            break
+                        
+                        if elapsed % 10 < 2:  # Log a cada 10 segundos para não poluir
+                            logger.info(f"Aguardando... ({elapsed:.1f}s/{max_wait}s) - Título: {page_title[:50]}")
+                    
+                    # Obter HTML final da página
+                    html = await page.content()
+                    
+                    await browser.close()
+                    return html
+                    
+            except Exception as e:
+                logger.error(f"Erro no Playwright: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                return None
+        
+        # Executar função assíncrona
+        html = asyncio.run(run_playwright_stealth())
+        
+        if not html:
+            return None, None, None, "Não foi possível obter HTML da página"
+        
+        # Parsear HTML com BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Verificar se foi bloqueado
+        if "403" in html or "Forbidden" in html or "blocked" in html.lower():
+            return None, None, None, "Página bloqueada pelo Cloudflare (403 Forbidden)"
+        
+        # Extrair dados do canal
+        channel_data = get_channel_data(username, soup)
+        
+        # Procurar primeiro link de vídeo
+        latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
+        
+        if latest_video_element:
+            urlebird_video_url = latest_video_element.get('href', '')
+            
+            # Garantir URL completa
+            base_url = 'https://urlebird.com'
+            if urlebird_video_url.startswith('/'):
+                urlebird_video_url = f"{base_url}{urlebird_video_url}"
+            elif not urlebird_video_url.startswith('http'):
+                urlebird_video_url = f"{base_url}/{urlebird_video_url}"
+            
+            # Extrair ID do vídeo
+            video_id_match = re.search(r'/video/[^/]+-(\d+)', urlebird_video_url)
+            if video_id_match:
+                video_id = video_id_match.group(1)
+                tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+            else:
+                parts = urlebird_video_url.rstrip('/').split('/')
+                if len(parts) > 0:
+                    last_part = parts[-1]
+                    video_id_match = re.search(r'(\d+)', last_part)
+                    if video_id_match:
+                        video_id = video_id_match.group(1)
+                        tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                    else:
+                        tiktok_url = None
+                else:
+                    tiktok_url = None
+            
+            logger.info(f"✓ Vídeo mais recente encontrado via Playwright + Stealth: {tiktok_url}")
+            return tiktok_url, urlebird_video_url, channel_data, None
+        else:
+            return None, None, channel_data, f"Nenhum vídeo encontrado para @{username}"
+            
+    except Exception as e:
+        error_msg = f"Erro ao usar Playwright + Stealth: {str(e)}"
+        logger.error(error_msg)
+        import traceback
+        logger.debug(traceback.format_exc())
+        return None, None, None, error_msg
+
 def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal
     
@@ -643,8 +1085,11 @@ def get_latest_video_url_from_channel(username):
     1. RapidAPI TikTok Scraper (API profissional, mais confiável)
     2. TikWM API (API pública)
     3. Countik (scraping alternativo)
-    4. Urlebird com Selenium (anti-detecção)
-    5. Urlebird com requests (fallback)
+    4. Playwright + Stealth (método do Manus - bypass Cloudflare eficaz)
+    5. Browser Use (Agent-based, fallback)
+    6. Urlebird com SeleniumBase (método avançado)
+    7. Urlebird com Selenium padrão (anti-detecção)
+    8. Urlebird com requests (fallback)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
@@ -671,9 +1116,29 @@ def get_latest_video_url_from_channel(username):
         logger.info("✓ Sucesso com Countik")
         return result
     
-    logger.warning("Countik falhou, tentando Urlebird com SeleniumBase...")
+    logger.warning("Countik falhou, tentando Playwright + Stealth...")
     
-    # Método 3: Tentar Urlebird com SeleniumBase (método mais avançado - conforme guia Cloudflare)
+    # Método 3: Tentar Playwright + Stealth (método recomendado pelo Manus - mais eficaz para Cloudflare)
+    if PLAYWRIGHT_AVAILABLE and PLAYWRIGHT_STEALTH_AVAILABLE:
+        logger.info("Tentando método Playwright + Stealth (método do Manus)...")
+        result = get_latest_video_url_from_channel_playwright(username)
+        if result[0] is not None:  # Se obteve sucesso
+            logger.info("✓ Sucesso com Playwright + Stealth")
+            return result
+        logger.warning("Playwright + Stealth falhou, tentando Browser Use...")
+    
+    # Método 4: Tentar Browser Use (Agent-based, fallback)
+    if BROWSER_USE_AVAILABLE:
+        logger.info("Tentando método Browser Use (Agent-based)...")
+        result = get_latest_video_url_from_channel_browseruse(username)
+        if result[0] is not None:  # Se obteve sucesso
+            logger.info("✓ Sucesso com Browser Use")
+            return result
+        logger.warning("Browser Use falhou, tentando SeleniumBase...")
+    
+    logger.warning("Tentando Urlebird com SeleniumBase...")
+    
+    # Método 5: Tentar Urlebird com SeleniumBase (método mais avançado - conforme guia Cloudflare)
     if SELENIUMBASE_AVAILABLE:
         logger.info("Tentando método SeleniumBase (método avançado conforme guia Cloudflare)...")
         result = get_latest_video_url_from_channel_seleniumbase(username)
@@ -682,7 +1147,7 @@ def get_latest_video_url_from_channel(username):
             return result
         logger.warning("SeleniumBase falhou, tentando Selenium padrão...")
     
-    # Método 4: Tentar Urlebird com Selenium padrão (anti-detecção)
+    # Método 6: Tentar Urlebird com Selenium padrão (anti-detecção)
     if SELENIUM_AVAILABLE:
         logger.info("Tentando método Selenium (anti-detecção)...")
         result = get_latest_video_url_from_channel_selenium(username)
@@ -691,7 +1156,7 @@ def get_latest_video_url_from_channel(username):
             return result
         logger.warning("Selenium falhou, tentando método requests...")
     
-    # Método 5: Fallback para método requests (Urlebird)
+    # Método 7: Fallback para método requests (Urlebird)
     if not BEAUTIFULSOUP_AVAILABLE:
         return None, None, None, "BeautifulSoup4 não está instalado"
     
@@ -1269,8 +1734,10 @@ def health():
         'message': message,
         'tiktok_downloader_available': TIKTOK_DOWNLOADER_AVAILABLE,
         'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
-        'selenium_available': SELENIUM_AVAILABLE
-    })
+        'selenium_available': SELENIUM_AVAILABLE,
+        'seleniumbase_available': SELENIUMBASE_AVAILABLE,
+        'browser_use_available': BROWSER_USE_AVAILABLE
+    }), 200
 
 @app.route('/channels/latest', methods=['POST'])
 def get_latest_videos():
@@ -1749,14 +2216,26 @@ def list_services():
             'TikWM',
             'MusicallyDown',
         'Tikdown',
-        'Urlebird'  # Último método - fallback
+        'Urlebird',  # Fallback
     ]
+    
+    # Adicionar serviços avançados se disponíveis
+    if PLAYWRIGHT_STEALTH_AVAILABLE:
+        services_list.append('Playwright + Stealth')
+    if BROWSER_USE_AVAILABLE:
+        services_list.append('Browser Use')
+    if SELENIUMBASE_AVAILABLE:
+        services_list.append('SeleniumBase')
+    if SELENIUM_AVAILABLE:
+        services_list.append('Selenium')
     
     return jsonify({
         'services': services_list,
         'available': TIKTOK_DOWNLOADER_AVAILABLE,
         'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
-        'selenium_available': SELENIUM_AVAILABLE
+        'selenium_available': SELENIUM_AVAILABLE,
+        'seleniumbase_available': SELENIUMBASE_AVAILABLE,
+        'browser_use_available': BROWSER_USE_AVAILABLE
     })
 
 if __name__ == '__main__':
