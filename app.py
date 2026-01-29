@@ -172,17 +172,21 @@ def get_latest_video_url_from_channel(username):
         # Extrair dados do canal
         channel_data = get_channel_data(username, soup)
         
+        # Armazenar base_url para uso posterior
+        base_url = url_used.rstrip('/').rsplit('/user/', 1)[0] if url_used else 'https://urlebird.com'
+        
         # Procura pelo primeiro link que aponta para um vídeo
         latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
         
         if latest_video_element:
             urlebird_video_url = latest_video_element.get('href', '')
             
-            # Garantir URL completa
+            # Garantir URL completa - usar o mesmo domínio/base da URL usada
             if urlebird_video_url.startswith('/'):
-                urlebird_video_url = f"https://urlebird.com{urlebird_video_url}"
+                # Se começa com /, pode ser /pt/video/ ou /video/
+                urlebird_video_url = f"{base_url}{urlebird_video_url}"
             elif not urlebird_video_url.startswith('http'):
-                urlebird_video_url = f"https://urlebird.com/{urlebird_video_url}"
+                urlebird_video_url = f"{base_url}/{urlebird_video_url}"
             
             # Extrair o ID do vídeo para reconstruir a URL original do TikTok
             # Formato esperado: /video/{username}-{video_id}/ ou similar
