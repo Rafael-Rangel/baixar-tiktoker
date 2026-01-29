@@ -644,31 +644,29 @@ def health():
 
 @app.route('/channels/latest', methods=['POST'])
 def get_latest_videos():
-    """Endpoint para listar os últimos vídeos de múltiplos canais
+    """Endpoint para listar os últimos vídeos de múltiplos canais OU extrair metadados de URLs
     
-    Retorna apenas as URLs dos vídeos mais recentes de cada canal.
-    Use este endpoint no passo 1 do workflow n8n.
+    Aceita:
+    - channels: Lista de usernames para buscar último vídeo de cada canal
+    - urls: Lista de URLs do TikTok para extrair metadados diretamente
     
     Body:
     {
-        "channels": ["usuario1", "@usuario2", "usuario3"]
+        "channels": ["usuario1", "@usuario2"]  OU
+        "urls": ["https://www.tiktok.com/@usuario/video/123456"]
     }
     
     Response:
     {
-        "total": 3,
+        "total": 2,
         "success": 2,
-        "failed": 1,
+        "failed": 0,
         "results": [
             {
-                "channel": "usuario1",
+                "url": "https://www.tiktok.com/@usuario/video/123456",
                 "success": true,
-                "url": "https://www.tiktok.com/@usuario1/video/123456"
-            },
-            {
-                "channel": "usuario2",
-                "success": false,
-                "error": "Não foi possível encontrar vídeo"
+                "channel": "usuario",
+                "video": { ... metadados ... }
             }
         ]
     }
@@ -680,17 +678,157 @@ def get_latest_videos():
         
         data = request.get_json()
         
-        if not data or 'channels' not in data:
-            return jsonify({'error': 'Campo "channels" é obrigatório'}), 400
-        
-        channels = data['channels']
-        if not isinstance(channels, list) or len(channels) == 0:
-            return jsonify({'error': 'Campo "channels" deve ser uma lista não vazia'}), 400
-        
-        logger.info(f"Buscando últimos vídeos de {len(channels)} canal(is)...")
+        if not data:
+            return jsonify({'error': 'Body vazio'}), 400
         
         results = []
-        for channel in channels:
+        
+        # Modo 1: Processar URLs diretamente
+        if 'urls' in data:
+            urls = data['urls']
+            if not isinstance(urls, list) or len(urls) == 0:
+                return jsonify({'error': 'Campo "urls" deve ser uma lista não vazia'}), 400
+            
+            logger.info(f"Extraindo metadados de {len(urls)} URL(s)...")
+            
+            for url in urls:
+                url = url.strip() if isinstance(url, str) else str(url).strip()
+                
+                # Validar URL do TikTok
+                if not validate_tiktok_url(url):
+                    results.append({
+                        'url': url,
+                        'success': False,
+                        'error': 'URL inválida'
+                    })
+                    continue
+                
+                logger.info(f"Processando URL: {url}")
+                
+                # Extrair username da URL
+                username_match = re.search(r'@([\w.]+)', url)
+                username = username_match.group(1) if username_match else None
+                
+                # Tentar obter URL do Urlebird para este vídeo específico
+                # Primeiro, tentar construir URL do Urlebird a partir da URL do TikTok
+                video_id_match = re.search(r'/video/(\d+)', url)
+                if video_id_match:
+                    video_id = video_id_match.group(1)
+                    if username:
+                        # Tentar acessar diretamente a página do vídeo no Urlebird
+                        urlebird_video_urls = [
+                            f"https://urlebird.com/pt/video/{username}-{video_id}/",
+                            f"https://urlebird.com/video/{username}-{video_id}/"
+                        ]
+                        
+                        video_details = None
+                        urlebird_url_used = None
+                        
+                        for urlebird_url in urlebird_video_urls:
+                            try:
+                                details, error = get_video_details_from_urlebird(urlebird_url)
+                                if details and not error:
+                                    video_details = details
+                                    urlebird_url_used = urlebird_url
+                                    break
+                            except:
+                                continue
+                        
+                        if video_details:
+                            result = {
+                                'url': url,
+                                'success': True,
+                                'channel': username,
+                                'urlebird_url': urlebird_url_used
+                            }
+                            
+                            # Adicionar metadados do vídeo
+                            result['video'] = {
+                                'caption': video_details.get('caption'),
+                                'posted_time': video_details.get('posted_time'),
+                                'metrics': {
+                                    'views': video_details.get('views'),
+                                    'likes': video_details.get('likes'),
+                                    'comments': video_details.get('comments'),
+                                    'shares': video_details.get('shares')
+                                },
+                                'cdn_link': video_details.get('cdn_link')
+                            }
+                            
+                            results.append(result)
+                            continue
+                
+                # Se não conseguiu via Urlebird direto, tentar buscar último vídeo do canal
+                if username:
+                    tiktok_url, urlebird_video_url, channel_data, error = get_latest_video_url_from_channel(username)
+                    if error or not tiktok_url:
+                        results.append({
+                            'url': url,
+                            'success': False,
+                            'error': error or 'Não foi possível encontrar vídeo'
+                        })
+                        continue
+                    
+                    # Se a URL fornecida não corresponde ao último vídeo, usar a URL fornecida
+                    if tiktok_url != url:
+                        # Tentar extrair metadados da URL fornecida usando outros métodos
+                        results.append({
+                            'url': url,
+                            'success': True,
+                            'channel': username,
+                            'note': 'URL fornecida não é o último vídeo do canal',
+                            'latest_video_url': tiktok_url
+                        })
+                    else:
+                        # Extrair metadados completos
+                        video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
+                        
+                        result = {
+                            'url': url,
+                            'success': True,
+                            'channel': username,
+                            'urlebird_url': urlebird_video_url
+                        }
+                        
+                        if channel_data:
+                            result['channel_data'] = {
+                                'followers': channel_data.get('followers'),
+                                'total_likes': channel_data.get('total_likes'),
+                                'videos_count': channel_data.get('videos_count')
+                            }
+                        
+                        if video_details:
+                            result['video'] = {
+                                'caption': video_details.get('caption'),
+                                'posted_time': video_details.get('posted_time'),
+                                'metrics': {
+                                    'views': video_details.get('views'),
+                                    'likes': video_details.get('likes'),
+                                    'comments': video_details.get('comments'),
+                                    'shares': video_details.get('shares')
+                                },
+                                'cdn_link': video_details.get('cdn_link')
+                            }
+                        elif details_error:
+                            result['video_error'] = details_error
+                        
+                        results.append(result)
+                else:
+                    results.append({
+                        'url': url,
+                        'success': False,
+                        'error': 'Não foi possível extrair username da URL'
+                    })
+        
+        # Modo 2: Processar canais (buscar último vídeo)
+        if 'channels' in data:
+            channels = data['channels']
+            if not isinstance(channels, list) or len(channels) == 0:
+                return jsonify({'error': 'Campo "channels" deve ser uma lista não vazia'}), 400
+            
+            logger.info(f"Buscando últimos vídeos de {len(channels)} canal(is)...")
+            
+            for channel in channels:
             username = validate_username(channel)
             if not username:
                 results.append({
@@ -916,12 +1054,12 @@ def download_get():
 def list_services():
     """Lista serviços disponíveis"""
     services_list = [
-        'Snaptik',
-        'Tikmate',
-        'SSStik',
-        'TTDownloader',
-        'TikWM',
-        'MusicallyDown',
+            'Snaptik',
+            'Tikmate',
+            'SSStik',
+            'TTDownloader',
+            'TikWM',
+            'MusicallyDown',
         'Tikdown',
         'Urlebird'  # Último método - fallback
     ]
