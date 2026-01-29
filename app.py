@@ -153,8 +153,37 @@ def get_latest_video_url_from_channel_selenium(username):
         # User-Agent realista
         options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
+        # Tentar encontrar Chrome automaticamente
+        import shutil
+        chrome_paths = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/snap/bin/chromium',
+            shutil.which('google-chrome'),
+            shutil.which('google-chrome-stable'),
+            shutil.which('chromium'),
+            shutil.which('chromium-browser')
+        ]
+        
+        chrome_binary = None
+        for path in chrome_paths:
+            if path and os.path.exists(path):
+                chrome_binary = path
+                options.binary_location = chrome_binary
+                break
+        
         # Criar driver com undetected-chromedriver
-        driver = uc.Chrome(options=options, version_main=None, use_subprocess=True)
+        try:
+            if chrome_binary:
+                driver = uc.Chrome(options=options, use_subprocess=True)
+            else:
+                # Tentar sem especificar binary_location - auto-detectar
+                driver = uc.Chrome(options=options, use_subprocess=True)
+        except Exception as e:
+            logger.warning(f"Erro ao criar driver com opções: {e}, tentando método simples...")
+            driver = uc.Chrome(use_subprocess=True)
         
         # Executar script para remover webdriver property
         driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
