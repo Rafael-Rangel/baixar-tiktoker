@@ -694,16 +694,69 @@ def get_latest_videos():
             for url in urls:
                 url = url.strip() if isinstance(url, str) else str(url).strip()
                 
+                # Verificar se é URL do Urlebird (perfil de usuário)
+                if 'urlebird.com' in url and '/user/' in url:
+                    # Extrair username da URL do Urlebird
+                    username_match = re.search(r'/user/([^/]+)', url)
+                    if username_match:
+                        username = username_match.group(1)
+                        logger.info(f"Processando perfil Urlebird: @{username}")
+                        # Buscar último vídeo do canal usando Urlebird
+                        tiktok_url, urlebird_video_url, channel_data, error = get_latest_video_url_from_channel(username)
+                        if error or not tiktok_url:
+                            results.append({
+                                'url': url,
+                                'success': False,
+                                'error': error or 'Não foi possível encontrar vídeo mais recente'
+                            })
+                            continue
+                        
+                        # Extrair metadados completos
+                        video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
+                        
+                        result = {
+                            'url': tiktok_url,
+                            'urlebird_profile_url': url,
+                            'success': True,
+                            'channel': username,
+                            'urlebird_url': urlebird_video_url
+                        }
+                        
+                        if channel_data:
+                            result['channel_data'] = {
+                                'followers': channel_data.get('followers'),
+                                'total_likes': channel_data.get('total_likes'),
+                                'videos_count': channel_data.get('videos_count')
+                            }
+                        
+                        if video_details:
+                            result['video'] = {
+                                'caption': video_details.get('caption'),
+                                'posted_time': video_details.get('posted_time'),
+                                'metrics': {
+                                    'views': video_details.get('views'),
+                                    'likes': video_details.get('likes'),
+                                    'comments': video_details.get('comments'),
+                                    'shares': video_details.get('shares')
+                                },
+                                'cdn_link': video_details.get('cdn_link')
+                            }
+                        elif details_error:
+                            result['video_error'] = details_error
+                        
+                        results.append(result)
+                        continue
+                
                 # Validar URL do TikTok
                 if not validate_tiktok_url(url):
                     results.append({
                         'url': url,
                         'success': False,
-                        'error': 'URL inválida'
+                        'error': 'URL inválida. Deve ser URL do TikTok ou Urlebird'
                     })
                     continue
                 
-                logger.info(f"Processando URL: {url}")
+                logger.info(f"Processando URL do TikTok: {url}")
                 
                 # Extrair username da URL
                 username_match = re.search(r'@([\w.]+)', url)
