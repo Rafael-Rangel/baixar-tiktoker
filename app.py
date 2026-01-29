@@ -1304,7 +1304,8 @@ def list_services():
     return jsonify({
         'services': services_list,
         'available': TIKTOK_DOWNLOADER_AVAILABLE,
-        'urlebird_available': BEAUTIFULSOUP_AVAILABLE
+        'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
+        'selenium_available': SELENIUM_AVAILABLE
     })
 
 if __name__ == '__main__':
