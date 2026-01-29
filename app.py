@@ -807,7 +807,8 @@ def health():
         'status': status,
         'message': message,
         'tiktok_downloader_available': TIKTOK_DOWNLOADER_AVAILABLE,
-        'urlebird_available': BEAUTIFULSOUP_AVAILABLE
+        'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
+        'selenium_available': SELENIUM_AVAILABLE
     })
 
 @app.route('/channels/latest', methods=['POST'])
