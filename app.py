@@ -19,6 +19,19 @@ except ImportError:
     BEAUTIFULSOUP_AVAILABLE = False
     BeautifulSoup = None
 
+# Importar Selenium para método Urlebird com anti-detecção
+try:
+    import undetected_chromedriver as uc
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException, WebDriverException
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    logger.warning("Selenium/undetected-chromedriver não está instalado. Método Urlebird com Selenium não estará disponível.")
+    SELENIUM_AVAILABLE = False
+    uc = None
+
 app = Flask(__name__)
 CORS(app)  # Permitir CORS para n8n
 
@@ -106,6 +119,128 @@ def get_channel_data(username, soup):
         logger.warning(f"Erro ao extrair dados do canal: {str(e)}")
     
     return channel_data
+
+def get_latest_video_url_from_channel_selenium(username):
+    """Extrai a URL do vídeo mais recente usando Selenium com anti-detecção
+    
+    Retorna: (tiktok_url, urlebird_video_url, channel_data, error)
+    """
+    if not SELENIUM_AVAILABLE:
+        return None, None, None, "Selenium não está instalado. Execute: pip install selenium undetected-chromedriver"
+    
+    driver = None
+    try:
+        username = validate_username(username)
+        if not username:
+            return None, None, None, "Username inválido"
+        
+        url = f"https://urlebird.com/pt/user/{username}/"
+        logger.info(f"Buscando vídeo mais recente de @{username} via Selenium (anti-detecção)...")
+        
+        # Configurar Chrome com opções anti-detecção
+        options = uc.ChromeOptions()
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920,1080')
+        options.add_argument('--start-maximized')
+        options.add_argument('--lang=pt-BR')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        # User-Agent realista
+        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        
+        # Criar driver com undetected-chromedriver
+        driver = uc.Chrome(options=options, version_main=None, use_subprocess=True)
+        
+        # Executar script para remover webdriver property
+        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+            'source': '''
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                window.navigator.chrome = {
+                    runtime: {}
+                };
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['pt-BR', 'pt', 'en-US', 'en']
+                });
+            '''
+        })
+        
+        # Acessar página
+        logger.info(f"Acessando: {url}")
+        driver.get(url)
+        
+        # Aguardar carregamento (com timeout)
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            import time
+            time.sleep(3)  # Aguardar JavaScript carregar
+        except TimeoutException:
+            return None, None, None, "Timeout ao carregar página"
+        
+        # Obter HTML da página
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Extrair dados do canal
+        channel_data = get_channel_data(username, soup)
+        
+        # Procurar primeiro link de vídeo
+        latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
+        
+        if latest_video_element:
+            urlebird_video_url = latest_video_element.get('href', '')
+            
+            # Garantir URL completa
+            base_url = 'https://urlebird.com'
+            if urlebird_video_url.startswith('/'):
+                urlebird_video_url = f"{base_url}{urlebird_video_url}"
+            elif not urlebird_video_url.startswith('http'):
+                urlebird_video_url = f"{base_url}/{urlebird_video_url}"
+            
+            # Extrair ID do vídeo
+            video_id_match = re.search(r'/video/[^/]+-(\d+)', urlebird_video_url)
+            if video_id_match:
+                video_id = video_id_match.group(1)
+                tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+            else:
+                parts = urlebird_video_url.rstrip('/').split('/')
+                if len(parts) > 0:
+                    last_part = parts[-1]
+                    video_id_match = re.search(r'(\d+)', last_part)
+                    if video_id_match:
+                        video_id = video_id_match.group(1)
+                        tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+                    else:
+                        tiktok_url = None
+                else:
+                    tiktok_url = None
+            
+            logger.info(f"✓ Vídeo mais recente encontrado via Selenium: {tiktok_url}")
+            return tiktok_url, urlebird_video_url, channel_data, None
+        else:
+            return None, None, channel_data, f"Nenhum vídeo encontrado para @{username}"
+            
+    except Exception as e:
+        error_msg = f"Erro ao usar Selenium: {str(e)}"
+        logger.error(error_msg)
+        return None, None, None, error_msg
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
 
 def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal usando Urlebird
