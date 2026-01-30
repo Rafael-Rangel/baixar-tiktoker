@@ -1324,13 +1324,7 @@ def get_latest_video_url_from_channel(username):
     Tenta múltiplas alternativas na seguinte ordem:
     1. RapidAPI TikTok Scraper (API profissional)
     2. TikWM API (API pública)
-    3. Countik (scraping alternativo)
-    4. Playwright + Stealth (método do Manus - bypass Cloudflare eficaz)
-    5. Browser Use (Agent-based, fallback)
-    6. Urlebird com SeleniumBase (método avançado)
-    7. Urlebird com Selenium padrão (anti-detecção)
-    8. Urlebird com requests (fallback)
-    9. Apify TikTok Scraper (ÚLTIMO - API profissional, resolve Cloudflare automaticamente)
+    3. Apify TikTok Scraper (ÚLTIMO - API profissional, resolve Cloudflare automaticamente)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
@@ -1350,257 +1344,11 @@ def get_latest_video_url_from_channel(username):
         logger.info("✓ Sucesso com TikWM API")
         return result
     
-    logger.warning("TikWM falhou, tentando Countik...")
+    logger.warning("TikWM falhou, tentando Apify...")
     
-    # Método 3: Tentar Countik
-    result = get_latest_video_url_from_channel_countik(username)
-    if result[0] is not None:
-        logger.info("✓ Sucesso com Countik")
-        return result
-    
-    logger.warning("Countik falhou, tentando Playwright + Stealth...")
-    
-    # Método 4: Tentar Playwright + Stealth (método recomendado pelo Manus - mais eficaz para Cloudflare)
-    if PLAYWRIGHT_AVAILABLE and PLAYWRIGHT_STEALTH_AVAILABLE:
-        logger.info("Tentando método Playwright + Stealth (método do Manus)...")
-        result = get_latest_video_url_from_channel_playwright(username)
-        if result[0] is not None:  # Se obteve sucesso
-            logger.info("✓ Sucesso com Playwright + Stealth")
-            return result
-        logger.warning("Playwright + Stealth falhou, tentando Browser Use...")
-    
-    # Método 5: Tentar Browser Use (Agent-based, fallback)
-    if BROWSER_USE_AVAILABLE:
-        logger.info("Tentando método Browser Use (Agent-based)...")
-        result = get_latest_video_url_from_channel_browseruse(username)
-        if result[0] is not None:  # Se obteve sucesso
-            logger.info("✓ Sucesso com Browser Use")
-            return result
-        logger.warning("Browser Use falhou, tentando SeleniumBase...")
-    
-    logger.warning("Tentando Urlebird com SeleniumBase...")
-    
-    # Método 6: Tentar Urlebird com SeleniumBase (método mais avançado - conforme guia Cloudflare)
-    if SELENIUMBASE_AVAILABLE:
-        logger.info("Tentando método SeleniumBase (método avançado conforme guia Cloudflare)...")
-        result = get_latest_video_url_from_channel_seleniumbase(username)
-        if result[0] is not None:  # Se obteve sucesso
-            logger.info("✓ Sucesso com Urlebird (SeleniumBase)")
-            return result
-        logger.warning("SeleniumBase falhou, tentando Selenium padrão...")
-    
-    # Método 7: Tentar Urlebird com Selenium padrão (anti-detecção)
-    if SELENIUM_AVAILABLE:
-        logger.info("Tentando método Selenium (anti-detecção)...")
-        result = get_latest_video_url_from_channel_selenium(username)
-        if result[0] is not None:  # Se obteve sucesso
-            logger.info("✓ Sucesso com Urlebird (Selenium)")
-            return result
-        logger.warning("Selenium falhou, tentando método requests...")
-    
-    # Método 8: Fallback para método requests (Urlebird)
-    if not BEAUTIFULSOUP_AVAILABLE:
-        return None, None, None, "BeautifulSoup4 não está instalado"
-    
-    logger.info("Tentando Urlebird com requests (último recurso)...")
-    
-    # Fallback para método requests
-    try:
-        username = validate_username(username)
-        if not username:
-            return None, None, None, "Username inválido"
-        
-        # Headers mais realistas para evitar bloqueio - simular navegador real
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            'Referer': 'https://urlebird.com/',
-            'Origin': 'https://urlebird.com'
-        }
-        
-        # Criar sessão para manter cookies
-        session = requests.Session()
-        
-        # Adicionar cookies carregados do arquivo (se disponíveis)
-        if URLEBIRD_COOKIES:
-            logger.info("Aplicando cookies carregados à sessão requests...")
-            for cookie_name, cookie_value in URLEBIRD_COOKIES.items():
-                session.cookies.set(cookie_name, cookie_value, domain='.urlebird.com')
-        
-        # Estratégia 1: Tentar com headers básicos primeiro
-        basic_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'pt-BR,pt;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        }
-        session.headers.update(basic_headers)
-        
-        # Tentar primeiro acessar a página inicial em PT para obter cookies
-        try:
-            logger.info("Obtendo cookies da página inicial (PT)...")
-            initial_response = session.get('https://urlebird.com/pt/', timeout=10)
-            if initial_response.status_code == 200:
-                logger.info("✓ Cookies obtidos com sucesso")
-            import time
-            time.sleep(2)  # Delay maior para parecer mais humano
-        except Exception as e:
-            logger.warning(f"Erro ao obter cookies: {str(e)}")
-            # Tentar página inicial sem /pt/ como fallback
-            try:
-                session.get('https://urlebird.com/', timeout=10)
-                import time
-                time.sleep(1)
-            except:
-                pass
-        
-        # Agora atualizar com headers completos
-        session.headers.update(headers)
-        
-        # URL exata: sempre usar /pt/ primeiro (versão em português)
-        urls_to_try = [
-            f"https://urlebird.com/pt/user/{username}/"
-        ]
-        
-        # Fallback apenas se necessário
-        # urls_to_try = [
-        #     f"https://urlebird.com/pt/user/{username}/",
-        #     f"https://urlebird.com/user/{username}/"
-        # ]
-        
-        response = None
-        url_used = None
-        last_status = None
-        
-        for url in urls_to_try:
-            try:
-                logger.info(f"Tentando acessar: {url}")
-                import time
-                time.sleep(0.5)  # Delay entre tentativas
-                
-                response = session.get(url, timeout=15, allow_redirects=True)
-                last_status = response.status_code
-                
-                if response.status_code == 200:
-                    url_used = url
-                    logger.info(f"✓ Sucesso ao acessar: {url}")
-                    break
-                elif response.status_code == 403:
-                    logger.warning(f"403 Forbidden em {url} - Tentando estratégias alternativas...")
-                    
-                    # Estratégia 1: Mudar referer para Google
-                    session.headers.update({
-                        'Referer': 'https://www.google.com/',
-                        'Origin': 'https://www.google.com'
-                    })
-                    import time
-                    time.sleep(2)
-                    response = session.get(url, timeout=15, allow_redirects=True)
-                    if response.status_code == 200:
-                        url_used = url
-                        logger.info(f"✓ Sucesso após mudar referer: {url}")
-                        break
-                    
-                    # Estratégia 2: User-Agent diferente
-                    session.headers.update({
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Referer': 'https://urlebird.com/pt/',
-                        'Origin': 'https://urlebird.com'
-                    })
-                    import time
-                    time.sleep(2)
-                    response = session.get(url, timeout=15, allow_redirects=True)
-                    if response.status_code == 200:
-                        url_used = url
-                        logger.info(f"✓ Sucesso com User-Agent alternativo: {url}")
-                        break
-                    
-                    # Se ainda falhar, continuar para próxima URL ou retornar erro
-                    logger.error(f"Todas as estratégias falharam para {url}")
-                    continue
-                else:
-                    logger.warning(f"Status {response.status_code} em {url}")
-                    continue
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Erro ao acessar {url}: {str(e)}")
-                continue
-        
-        if not response or response.status_code != 200:
-            error_msg = f"Erro ao acessar Urlebird: Não foi possível acessar nenhuma URL. Último status HTTP: {last_status if last_status else 'N/A'}. O Urlebird pode estar bloqueando requisições automatizadas. Tente novamente mais tarde ou use outro método."
-            logger.error(error_msg)
-            return None, None, None, error_msg
-        
-        logger.info(f"✓ Acesso bem-sucedido via: {url_used}")
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Extrair dados do canal
-        channel_data = get_channel_data(username, soup)
-        
-        # Armazenar base_url para uso posterior
-        base_url = url_used.rstrip('/').rsplit('/user/', 1)[0] if url_used else 'https://urlebird.com'
-        
-        # Procura pelo primeiro link que aponta para um vídeo
-        latest_video_element = soup.find('a', href=lambda href: href and '/video/' in href)
-        
-        if latest_video_element:
-            urlebird_video_url = latest_video_element.get('href', '')
-            
-            # Garantir URL completa - usar o mesmo domínio/base da URL usada
-            if urlebird_video_url.startswith('/'):
-                # Se começa com /, pode ser /pt/video/ ou /video/
-                urlebird_video_url = f"{base_url}{urlebird_video_url}"
-            elif not urlebird_video_url.startswith('http'):
-                urlebird_video_url = f"{base_url}/{urlebird_video_url}"
-            
-            # Extrair o ID do vídeo para reconstruir a URL original do TikTok
-            # Formato esperado: /video/{username}-{video_id}/ ou similar
-            video_id_match = re.search(r'/video/[^/]+-(\d+)', urlebird_video_url)
-            if video_id_match:
-                video_id = video_id_match.group(1)
-                tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
-            else:
-                # Tentar extrair de outra forma
-                parts = urlebird_video_url.rstrip('/').split('/')
-                if len(parts) > 0:
-                    last_part = parts[-1]
-                    video_id_match = re.search(r'(\d+)', last_part)
-                    if video_id_match:
-                        video_id = video_id_match.group(1)
-                        tiktok_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
-                    else:
-                        tiktok_url = None
-                else:
-                    tiktok_url = None
-            
-            logger.info(f"✓ Vídeo mais recente encontrado: {tiktok_url}")
-            return tiktok_url, urlebird_video_url, channel_data, None
-        else:
-            return None, None, channel_data, f"Nenhum vídeo encontrado para @{username}"
-            
-    except requests.exceptions.RequestException as e:
-        error_msg = f"Erro ao acessar Urlebird: {str(e)}"
-        logger.warning(error_msg)
-        # Não retornar ainda - tentar Apify como último recurso
-    except Exception as e:
-        error_msg = f"Erro ao processar página do Urlebird: {str(e)}"
-        logger.warning(error_msg)
-        # Não retornar ainda - tentar Apify como último recurso
-    
-    # Método 9: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
+    # Método 3: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
     if APIFY_AVAILABLE:
-        logger.warning("Todos os métodos falharam, tentando Apify como último recurso...")
+        logger.warning("Tentando Apify como último recurso...")
         logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
         result = get_latest_video_url_from_channel_apify(username)
         if result[0] is not None:  # Se obteve sucesso
@@ -1944,11 +1692,168 @@ def get_services_list():
     
     return services
 
+def download_tiktok_video_apify(url):
+    """Baixa vídeo do TikTok usando Apify TikTok Scraper
+    
+    Usa Apify para obter URL de download direto do vídeo e baixa usando requests.
+    """
+    if not APIFY_AVAILABLE:
+        return None, "Apify Client não está instalado. Execute: pip install apify-client"
+    
+    try:
+        # Obter API token do Apify
+        apify_token = os.getenv('APIFY_API_TOKEN', None)
+        if not apify_token:
+            return None, "APIFY_API_TOKEN não configurado. Configure a variável de ambiente com sua chave do Apify"
+        
+        # Extrair username da URL
+        username_match = re.search(r'@([\w.]+)', url)
+        if not username_match:
+            return None, "Não foi possível extrair username da URL"
+        
+        username = username_match.group(1)
+        
+        logger.info(f"Tentando baixar vídeo via Apify: {url}")
+        
+        # Inicializar cliente Apify
+        client = ApifyClient(apify_token)
+        
+        # Preparar input para o Actor TikTok Scraper (formato conforme exemplo do usuário)
+        run_input = {
+            "startURLs": [url],  # URL direta do vídeo
+            "resultsPerPage": 1,
+            "shouldDownloadVideos": True,  # Habilitar download de vídeos
+            "shouldDownloadSubtitles": True,
+            "shouldDownloadAvatars": False,
+            "shouldDownloadCovers": False,
+            "shouldDownloadMusicCovers": False,
+            "shouldDownloadSlideshowImages": False,
+            "proxyCountryCode": "None"
+        }
+        
+        # Executar Actor e aguardar conclusão
+        logger.info("Executando Apify TikTok Scraper para download...")
+        run = client.actor("clockworks/tiktok-scraper").call(run_input=run_input)
+        
+        # Buscar resultados do dataset
+        dataset_id = run.get("defaultDatasetId")
+        if not dataset_id:
+            return None, "Dataset não foi criado pelo Apify"
+        
+        logger.info(f"Buscando resultados do dataset {dataset_id}...")
+        
+        # Iterar pelos itens do dataset
+        items = list(client.dataset(dataset_id).iterate_items())
+        
+        if not items or len(items) == 0:
+            return None, "Nenhum vídeo encontrado no Apify"
+        
+        # Pegar o primeiro item
+        video_data = items[0]
+        
+        # Tentar obter URL de download direto (várias possibilidades de campos)
+        video_url = (video_data.get("videoUrl") or 
+                    video_data.get("videoDownloadUrl") or 
+                    video_data.get("downloadAddr") or
+                    video_data.get("videoMeta", {}).get("videoUrl") or
+                    video_data.get("videoMeta", {}).get("downloadAddr"))
+        
+        if not video_url:
+            # Tentar obter do campo videoMeta ou outros campos aninhados
+            video_meta = video_data.get("videoMeta", {})
+            if video_meta:
+                video_url = (video_meta.get("videoUrl") or 
+                           video_meta.get("downloadAddr") or
+                           video_meta.get("playAddr"))
+        
+        if video_url:
+            # Baixar vídeo da URL direta
+            logger.info(f"Baixando vídeo da URL obtida do Apify...")
+            
+            # Criar nome de arquivo temporário único
+            temp_filename = f"tiktok_{uuid.uuid4().hex[:8]}.mp4"
+            temp_path = os.path.join(DOWNLOAD_DIR, temp_filename)
+            
+            # Baixar vídeo usando requests
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': url
+            }
+            
+            response = requests.get(video_url, headers=headers, timeout=60, stream=True)
+            response.raise_for_status()
+            
+            with open(temp_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                logger.info(f"✓ Vídeo baixado com sucesso via Apify: {temp_path}")
+                return temp_path, None
+            else:
+                return None, "Arquivo baixado está vazio"
+        
+        # Se não encontrou URL direta, tentar baixar arquivo do dataset do Apify
+        # (quando shouldDownloadVideos: true, o Apify pode ter baixado o arquivo)
+        logger.info("URL de download direto não encontrada, tentando baixar arquivo do dataset do Apify...")
+        
+        # Tentar acessar arquivos do dataset
+        try:
+            # Listar arquivos do dataset
+            dataset_files = list(client.dataset(dataset_id).list_files())
+            
+            if dataset_files and len(dataset_files) > 0:
+                # Encontrar arquivo de vídeo
+                video_file = None
+                for file_info in dataset_files:
+                    file_name = file_info.get('name', '') or file_info.get('key', '')
+                    if file_name.endswith('.mp4'):
+                        video_file = file_info
+                        break
+                
+                if video_file:
+                    # Obter URL de download do arquivo
+                    file_key = video_file.get('key') or video_file.get('name')
+                    if file_key:
+                        # Criar nome de arquivo temporário único
+                        temp_filename = f"tiktok_{uuid.uuid4().hex[:8]}.mp4"
+                        temp_path = os.path.join(DOWNLOAD_DIR, temp_filename)
+                        
+                        # Baixar arquivo do dataset usando a URL
+                        file_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items/{file_key}?format=json"
+                        # Ou tentar baixar diretamente do storage
+                        try:
+                            # Tentar obter o arquivo diretamente
+                            file_response = client.dataset(dataset_id).get_item(file_key)
+                            # Se retornar bytes, salvar diretamente
+                            if isinstance(file_response, bytes):
+                                with open(temp_path, 'wb') as f:
+                                    f.write(file_response)
+                                if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                                    logger.info(f"✓ Vídeo baixado com sucesso via Apify (dataset): {temp_path}")
+                                    return temp_path, None
+                        except:
+                            pass
+            
+        except Exception as e:
+            logger.debug(f"Erro ao tentar baixar arquivo do dataset: {e}")
+        
+        return None, "Não foi possível obter URL de download ou arquivo do Apify"
+        
+    except Exception as e:
+        error_msg = f"Erro ao usar Apify para download: {str(e)}"
+        logger.error(error_msg)
+        import traceback
+        logger.debug(traceback.format_exc())
+        return None, error_msg
+
 def download_tiktok_video(url):
     """Baixa vídeo do TikTok usando tiktok-downloader
     
     Usa ordem otimizada baseada em testes anteriores.
     Serviços que funcionaram primeiro são tentados primeiro.
+    Apify é usado como último recurso.
     """
     
     if not TIKTOK_DOWNLOADER_AVAILABLE:
@@ -2013,6 +1918,15 @@ def download_tiktok_video(url):
             last_error = str(e)
             logger.warning(f"Erro ao usar {service_name}: {last_error}")
             continue
+    
+    # ÚLTIMO RECURSO: Tentar Apify se todos os outros métodos falharam
+    if APIFY_AVAILABLE:
+        logger.warning("Todos os métodos do tiktok-downloader falharam, tentando Apify como último recurso...")
+        downloaded_file, error = download_tiktok_video_apify(url)
+        if downloaded_file:
+            return downloaded_file, None
+        if error:
+            last_error = f"Apify também falhou: {error}"
     
     # Se nenhum serviço funcionou
     error_msg = f"Nenhum serviço conseguiu baixar o vídeo. Último erro: {last_error}" if last_error else "Nenhum serviço conseguiu baixar o vídeo"
@@ -2528,28 +2442,11 @@ def list_services():
         'Tikdown',
     ])
     
-    # Adicionar serviços avançados se disponíveis
-    if PLAYWRIGHT_STEALTH_AVAILABLE:
-        services_list.append('Playwright + Stealth')
-    if BROWSER_USE_AVAILABLE:
-        services_list.append('Browser Use')
-    if SELENIUMBASE_AVAILABLE:
-        services_list.append('SeleniumBase')
-    if SELENIUM_AVAILABLE:
-        services_list.append('Selenium')
-    
-    # Urlebird como último fallback
-    services_list.append('Urlebird')
-    
     return jsonify({
         'services': services_list,
         'available': TIKTOK_DOWNLOADER_AVAILABLE,
         'apify_available': APIFY_AVAILABLE,
-        'apify_token_configured': bool(os.getenv('APIFY_API_TOKEN')),
-        'urlebird_available': BEAUTIFULSOUP_AVAILABLE,
-        'selenium_available': SELENIUM_AVAILABLE,
-        'seleniumbase_available': SELENIUMBASE_AVAILABLE,
-        'browser_use_available': BROWSER_USE_AVAILABLE
+        'apify_token_configured': bool(os.getenv('APIFY_API_TOKEN'))
     })
 
 if __name__ == '__main__':
