@@ -506,17 +506,25 @@ def get_latest_video_url_from_channel_rapidapi(username):
             else:
                 return None, None, None, f"Nenhum vídeo encontrado para @{username}"
         elif response.status_code == 401 or response.status_code == 403:
+            error_detail = response.text[:200] if hasattr(response, 'text') else 'Sem detalhes'
+            logger.warning(f"RapidAPI retornou {response.status_code}: {error_detail}")
             return None, None, None, f"Erro de autenticação (pode precisar de chave RapidAPI): HTTP {response.status_code}"
         else:
+            error_detail = response.text[:200] if hasattr(response, 'text') else 'Sem detalhes'
+            logger.warning(f"RapidAPI retornou {response.status_code}: {error_detail}")
             return None, None, None, f"Erro HTTP {response.status_code} ao acessar RapidAPI"
             
     except requests.exceptions.RequestException as e:
         error_msg = f"Erro ao acessar RapidAPI: {str(e)}"
         logger.warning(error_msg)
+        logger.debug(f"Detalhes do erro RapidAPI: {type(e).__name__}: {str(e)}")
         return None, None, None, error_msg
     except Exception as e:
         error_msg = f"Erro ao processar resposta RapidAPI: {str(e)}"
         logger.warning(error_msg)
+        logger.debug(f"Detalhes do erro RapidAPI: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.debug(traceback.format_exc())
         return None, None, None, error_msg
 
 def get_latest_video_url_from_channel_apify(username):
@@ -606,6 +614,7 @@ def get_latest_video_url_from_channel_apify(username):
     except Exception as e:
         error_msg = f"Erro ao usar Apify: {str(e)}"
         logger.error(error_msg)
+        logger.warning(f"Detalhes do erro Apify: {type(e).__name__}: {str(e)}")
         import traceback
         logger.debug(traceback.format_exc())
         return None, None, None, error_msg
@@ -667,17 +676,24 @@ def get_latest_video_url_from_channel_tikwm(username):
                     return None, None, None, f"Nenhum vídeo encontrado para @{username}"
             else:
                 error_msg = data.get('msg', 'Erro desconhecido da API TikWM')
+                logger.warning(f"TikWM retornou erro: {error_msg} (código: {data.get('code', 'N/A')})")
                 return None, None, None, f"Erro TikWM: {error_msg}"
         else:
+            error_detail = response.text[:200] if hasattr(response, 'text') else 'Sem detalhes'
+            logger.warning(f"TikWM retornou HTTP {response.status_code}: {error_detail}")
             return None, None, None, f"Erro HTTP {response.status_code} ao acessar TikWM"
             
     except requests.exceptions.RequestException as e:
         error_msg = f"Erro ao acessar TikWM: {str(e)}"
         logger.warning(error_msg)
+        logger.debug(f"Detalhes do erro TikWM: {type(e).__name__}: {str(e)}")
         return None, None, None, error_msg
     except Exception as e:
         error_msg = f"Erro ao processar resposta TikWM: {str(e)}"
         logger.warning(error_msg)
+        logger.debug(f"Detalhes do erro TikWM: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.debug(traceback.format_exc())
         return None, None, None, error_msg
 
 def get_latest_video_url_from_channel_browseruse(username):
