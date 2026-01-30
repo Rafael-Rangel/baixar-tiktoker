@@ -2188,13 +2188,13 @@ def get_latest_videos():
                         'success': False,
                         'error': 'Não foi possível extrair username da URL'
                     })
-        
+
         # Modo 2: Processar canais (buscar último vídeo)
-        if 'channels' in data:
-            channels = data['channels']
+        channels = data.get('channels')
+        if channels is not None:
             if not isinstance(channels, list) or len(channels) == 0:
                 return jsonify({'error': 'Campo "channels" deve ser uma lista não vazia'}), 400
-            
+
             logger.info(f"Buscando últimos vídeos de {len(channels)} canal(is)...")
             
             for channel in channels:
