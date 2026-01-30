@@ -591,6 +591,10 @@ def get_latest_video_url_from_channel_apify(username):
         # Pegar o primeiro item (mais recente devido ao profileSorting: "latest")
         latest_video = items[0]
         
+        # Log para debug: ver o que está vindo do Apify
+        logger.debug(f"Dados completos do Apify (primeiros 1000 chars): {json.dumps(latest_video, indent=2, ensure_ascii=False)[:1000]}")
+        logger.info(f"Campos disponíveis no objeto do Apify: {list(latest_video.keys())[:20]}")
+        
         # Extrair URL do vídeo
         web_video_url = latest_video.get("webVideoUrl") or latest_video.get("submittedVideoUrl")
         if not web_video_url:
@@ -628,10 +632,10 @@ def get_latest_video_url_from_channel_apify(username):
         
         # Extrair campos conforme documentação do Apify
         # text = caption/descrição do vídeo (campo direto)
-        caption = latest_video.get("text") or None
+        caption = latest_video.get("text") or latest_video.get("desc") or None
         
         # createTimeISO = data de postagem formatada (campo direto)
-        posted_time = latest_video.get("createTimeISO") or None
+        posted_time = latest_video.get("createTimeISO") or latest_video.get("createTime") or None
         
         # Métricas estão DIRETAMENTE no objeto latest_video (não dentro de stats)
         # Conforme documentação: playCount, diggCount, commentCount, shareCount são campos diretos
@@ -639,6 +643,9 @@ def get_latest_video_url_from_channel_apify(username):
         digg_count = latest_video.get("diggCount")  # likes
         comment_count = latest_video.get("commentCount")
         share_count = latest_video.get("shareCount")
+        
+        # Log para debug dos valores extraídos
+        logger.debug(f"Valores extraídos - caption: {caption is not None}, playCount: {play_count}, diggCount: {digg_count}, commentCount: {comment_count}, shareCount: {share_count}, createTimeISO: {posted_time}")
         
         # CDN link - pode estar em videoMeta.videoUrl ou mediaUrls
         video_meta = latest_video.get("videoMeta", {})
