@@ -543,66 +543,45 @@ def get_latest_video_url_from_channel_apify(username):
         if not username:
             return None, None, None, "Username inválido"
         
-        logger.info(f"Tentando Apify TikTok Scraper para @{username}...")
-        
-        # Obter API token do Apify (variável de ambiente)
         apify_token = os.getenv('APIFY_API_TOKEN', None)
         if not apify_token:
-            return None, None, None, "APIFY_API_TOKEN não configurado. Configure a variável de ambiente com sua chave do Apify"
+            return None, None, None, "APIFY_API_TOKEN não configurado"
         
-        # Inicializar cliente Apify
         client = ApifyClient(apify_token)
         
-        # Preparar input para o Actor TikTok Scraper
         run_input = {
-            "profiles": [username],  # Lista de usernames
-            "resultsPerPage": 1,  # Apenas o vídeo mais recente
-            "profileScrapeSections": ["videos"],  # Apenas vídeos
-            "profileSorting": "latest",  # Mais recente primeiro
-            "excludePinnedPosts": False,  # Incluir posts fixados
+            "profiles": [username],
+            "resultsPerPage": 1,
+            "profileScrapeSections": ["videos"],
+            "profileSorting": "latest",
+            "excludePinnedPosts": False,
             "maxFollowersPerProfile": 0,
             "maxFollowingPerProfile": 0,
             "commentsPerPost": 0,
             "maxRepliesPerComment": 0,
-            "shouldDownloadVideos": False,  # Não baixar vídeos (apenas metadados)
+            "shouldDownloadVideos": False,
             "shouldDownloadCovers": False,
             "shouldDownloadSubtitles": False,
             "shouldDownloadAvatars": False,
             "proxyCountryCode": "None"
         }
         
-        # Executar Actor e aguardar conclusão
-        logger.info("Executando Apify TikTok Scraper...")
         run = client.actor("clockworks/tiktok-scraper").call(run_input=run_input)
         
-        # Buscar resultados do dataset
         dataset_id = run.get("defaultDatasetId")
         if not dataset_id:
             return None, None, None, "Dataset não foi criado pelo Apify"
         
-        logger.info(f"Buscando resultados do dataset {dataset_id}...")
-        
-        # Iterar pelos itens do dataset
         items = list(client.dataset(dataset_id).iterate_items())
         
         if not items or len(items) == 0:
             return None, None, None, f"Nenhum vídeo encontrado para @{username}"
         
-        # Pegar o primeiro item (mais recente devido ao profileSorting: "latest")
         latest_video = items[0]
         
-        # Log para debug: ver o que está vindo do Apify
-        logger.info(f"Total de itens retornados pelo Apify: {len(items)}")
-        logger.info(f"Campos disponíveis no objeto do Apify: {sorted(list(latest_video.keys()))}")
-        
-        # Extrair URL do vídeo
         web_video_url = latest_video.get("webVideoUrl") or latest_video.get("submittedVideoUrl")
         if not web_video_url:
-            logger.error(f"URL do vídeo não encontrada. Campos disponíveis: {list(latest_video.keys())}")
             return None, None, None, "URL do vídeo não encontrada na resposta do Apify"
-        
-        # Log dos valores principais para debug (após confirmar que tem URL)
-        logger.info(f"Valores principais do Apify - text: {latest_video.get('text')}, playCount: {latest_video.get('playCount')}, diggCount: {latest_video.get('diggCount')}, commentCount: {latest_video.get('commentCount')}, shareCount: {latest_video.get('shareCount')}, createTimeISO: {latest_video.get('createTimeISO')}")
         
         # Extrair dados do canal do authorMeta
         # O Apify retorna campos ACHATADOS como "authorMeta.name", "authorMeta.fans", etc.
@@ -631,14 +610,6 @@ def get_latest_video_url_from_channel_apify(username):
             'signature': author_meta_dict.get("signature") or latest_video.get("authorMeta.signature", "")
         }
         
-        logger.info(f"=== DEBUG CHANNEL DATA ===")
-        logger.info(f"followers: {channel_data.get('followers')}")
-        logger.info(f"total_likes: {channel_data.get('total_likes')}")
-        logger.info(f"nickname: {channel_data.get('nickname')}")
-        logger.info(f"==========================")
-        
-        # Extrair metadados do vídeo do Apify (baseado na documentação oficial)
-        # Campos estão DIRETAMENTE no objeto latest_video, não dentro de stats
         def format_number(num):
             """Formata números grandes (ex: 1000000 -> "1M")"""
             if num is None:
@@ -655,57 +626,19 @@ def get_latest_video_url_from_channel_apify(username):
             except:
                 return str(num) if num else None
         
-        # Extrair campos conforme exemplo do usuário
-        # Campos estão DIRETAMENTE no objeto latest_video (achatados)
-        # text = caption/descrição do vídeo (campo direto)
         caption = latest_video.get("text") or latest_video.get("desc") or None
-        
-        # createTimeISO = data de postagem formatada (campo direto)
         posted_time = latest_video.get("createTimeISO") or latest_video.get("createTime") or None
-        
-        # Métricas estão DIRETAMENTE no objeto latest_video
-        # Conforme exemplo: playCount, diggCount, commentCount, shareCount são campos diretos
         play_count = latest_video.get("playCount")
-        digg_count = latest_video.get("diggCount")  # likes
+        digg_count = latest_video.get("diggCount")
         comment_count = latest_video.get("commentCount")
         share_count = latest_video.get("shareCount")
         
-        # Log dos valores brutos antes da formatação
-        logger.info(f"=== DEBUG VIDEO METADATA (BRUTOS) ===")
-        logger.info(f"text (caption): '{caption}'")
-        logger.info(f"playCount (views): {play_count}")
-        logger.info(f"diggCount (likes): {digg_count}")
-        logger.info(f"commentCount: {comment_count}")
-        logger.info(f"shareCount: {share_count}")
-        logger.info(f"createTimeISO (posted_time): {posted_time}")
-        logger.info(f"=====================================")
-        
-        # Log detalhado dos valores extraídos
-        logger.info(f"Valores extraídos do Apify:")
-        logger.info(f"  - caption (text): {caption[:50] if caption else 'None'}...")
-        logger.info(f"  - posted_time (createTimeISO): {posted_time}")
-        logger.info(f"  - playCount (views): {play_count}")
-        logger.info(f"  - diggCount (likes): {digg_count}")
-        logger.info(f"  - commentCount: {comment_count}")
-        logger.info(f"  - shareCount: {share_count}")
-        
-        # CDN link - pode estar em videoMeta.videoUrl ou mediaUrls
-        # O Apify pode retornar campos achatados (videoMeta.duration) ou objetos aninhados
         video_meta = latest_video.get("videoMeta", {})
         media_urls = latest_video.get("mediaUrls", [])
-        
-        # Se videoMeta for vazio, tentar campos achatados
-        if not video_meta or (isinstance(video_meta, dict) and len(video_meta) == 0):
-            # Não há campos achatados para videoMeta no exemplo, mas vamos tentar
-            pass
-        
-        # Tentar obter URL do vídeo de várias fontes
         cdn_link = None
         if media_urls and len(media_urls) > 0:
-            # Se tiver mediaUrls (quando shouldDownloadVideos=true), usar o primeiro
             cdn_link = media_urls[0] if isinstance(media_urls[0], str) else media_urls[0].get("url") if isinstance(media_urls[0], dict) else None
         else:
-            # Tentar outros campos possíveis
             cdn_link = (
                 latest_video.get("videoUrl") or 
                 latest_video.get("downloadAddr") or 
@@ -713,7 +646,6 @@ def get_latest_video_url_from_channel_apify(username):
                 None
             )
         
-        # Criar objeto de metadados do vídeo (formato compatível com Urlebird)
         video_details_apify = {
             'caption': caption,
             'posted_time': posted_time,
@@ -724,28 +656,12 @@ def get_latest_video_url_from_channel_apify(username):
             'cdn_link': cdn_link
         }
         
-        logger.info(f"Metadados extraídos do Apify:")
-        logger.info(f"  - caption: {caption[:50] if caption else 'None'}...")
-        logger.info(f"  - posted_time: {posted_time}")
-        logger.info(f"  - views: {play_count} ({format_number(play_count) if play_count else 'None'})")
-        logger.info(f"  - likes: {digg_count} ({format_number(digg_count) if digg_count else 'None'})")
-        logger.info(f"  - comments: {comment_count} ({format_number(comment_count) if comment_count else 'None'})")
-        logger.info(f"  - shares: {share_count} ({format_number(share_count) if share_count else 'None'})")
-        logger.info(f"  - cdn_link: {'✓' if cdn_link else '✗'}")
-        
-        # Adicionar metadados do vídeo ao channel_data para retornar junto
         channel_data['_video_details_apify'] = video_details_apify
-        
-        logger.info(f"✓ Vídeo mais recente encontrado via Apify: {web_video_url}")
         return web_video_url, web_video_url, channel_data, None
         
     except Exception as e:
-        error_msg = f"Erro ao usar Apify: {str(e)}"
-        logger.error(error_msg)
-        logger.warning(f"Detalhes do erro Apify: {type(e).__name__}: {str(e)}")
-        import traceback
-        logger.debug(traceback.format_exc())
-        return None, None, None, error_msg
+        logger.error(f"Erro ao usar Apify: {str(e)}")
+        return None, None, None, f"Erro ao usar Apify: {str(e)}"
 
 def get_latest_video_url_from_channel_tikwm(username):
     """Extrai a URL do vídeo mais recente usando TikWM API
@@ -1469,9 +1385,6 @@ def get_latest_video_url_from_channel(username):
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
-    logger.info(f"Tentando obter último vídeo de @{username} usando Apify...")
-    
-    # Usar apenas Apify
     if not APIFY_AVAILABLE:
         return None, None, None, "Apify Client não está instalado. Execute: pip install apify-client"
     
@@ -1479,14 +1392,7 @@ def get_latest_video_url_from_channel(username):
     if not apify_token:
         return None, None, None, "APIFY_API_TOKEN não configurado. Configure a variável de ambiente com sua chave do Apify"
     
-    logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
-    result = get_latest_video_url_from_channel_apify(username)
-    if result[0] is not None:  # Se obteve sucesso
-        logger.info("✓ Sucesso com Apify TikTok Scraper")
-        return result
-    
-    logger.warning("Apify falhou.")
-    return None, None, None, "Apify falhou. Não foi possível obter o último vídeo do canal."
+    return get_latest_video_url_from_channel_apify(username)
 
 def get_video_details_from_urlebird(urlebird_video_url):
     """Extrai metadados, métricas e link de download (CDN) do vídeo no Urlebird
@@ -2175,8 +2081,7 @@ def get_latest_videos():
                         if channel_data:
                             result['channel_data'] = {
                                 'followers': channel_data.get('followers'),
-                                'total_likes': channel_data.get('total_likes'),
-                                'videos_count': channel_data.get('videos_count')
+                                'total_likes': channel_data.get('total_likes')
                             }
                         
                         if video_details:
@@ -2188,8 +2093,7 @@ def get_latest_videos():
                                     'likes': video_details.get('likes'),
                                     'comments': video_details.get('comments'),
                                     'shares': video_details.get('shares')
-                                },
-                                'cdn_link': video_details.get('cdn_link')
+                                }
                             }
                         elif details_error:
                             result['video_error'] = details_error
@@ -2205,8 +2109,6 @@ def get_latest_videos():
                         'error': 'URL inválida. Deve ser URL do TikTok ou Urlebird'
                     })
                     continue
-                
-                logger.info(f"Processando URL do TikTok: {url}")
                 
                 # Extrair username da URL
                 username_match = re.search(r'@([\w.]+)', url)
@@ -2254,8 +2156,7 @@ def get_latest_videos():
                                     'likes': video_details.get('likes'),
                                     'comments': video_details.get('comments'),
                                     'shares': video_details.get('shares')
-                                },
-                                'cdn_link': video_details.get('cdn_link')
+                                }
                             }
                             
                             results.append(result)
@@ -2296,8 +2197,7 @@ def get_latest_videos():
                         if channel_data:
                             result['channel_data'] = {
                                 'followers': channel_data.get('followers'),
-                                'total_likes': channel_data.get('total_likes'),
-                                'videos_count': channel_data.get('videos_count')
+                                'total_likes': channel_data.get('total_likes')
                             }
                         
                         if video_details:
@@ -2309,8 +2209,7 @@ def get_latest_videos():
                                     'likes': video_details.get('likes'),
                                     'comments': video_details.get('comments'),
                                     'shares': video_details.get('shares')
-                                },
-                                'cdn_link': video_details.get('cdn_link')
+                                }
                             }
                         elif details_error:
                             result['video_error'] = details_error
@@ -2328,8 +2227,6 @@ def get_latest_videos():
         if channels is not None:
             if not isinstance(channels, list) or len(channels) == 0:
                 return jsonify({'error': 'Campo "channels" deve ser uma lista não vazia'}), 400
-
-            logger.info(f"Buscando últimos vídeos de {len(channels)} canal(is)...")
             
             for channel in channels:
                 username = validate_username(channel)
@@ -2340,8 +2237,6 @@ def get_latest_videos():
                         'error': 'Username inválido'
                     })
                     continue
-                
-                logger.info(f"Buscando último vídeo de @{username}...")
                 
                 # Buscar URL do vídeo mais recente e dados do canal
                 tiktok_url, urlebird_video_url, channel_data, error = get_latest_video_url_from_channel(username)
@@ -2354,22 +2249,10 @@ def get_latest_videos():
                     })
                     continue
                 
-                # Verificar se veio do Apify (tem metadados do vídeo no channel_data)
+                # Extrair metadados do Apify (sempre vem do Apify agora)
                 video_details = None
-                details_error = None
-                
                 if channel_data and '_video_details_apify' in channel_data:
-                    # Usar metadados do Apify diretamente
                     video_details = channel_data.pop('_video_details_apify')
-                    logger.info("Usando metadados do vídeo do Apify")
-                else:
-                    # Tentar extrair metadados do Urlebird (só se for URL do Urlebird)
-                    if urlebird_video_url and 'urlebird.com' in urlebird_video_url:
-                        video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
-                    else:
-                        # Se não for URL do Urlebird, não tenta extrair metadados
-                        logger.info("URL não é do Urlebird, pulando extração de metadados")
-                        details_error = "Metadados não disponíveis (método usado não fornece metadados detalhados)"
                 
                 # Montar resultado completo
                 result = {
@@ -2383,8 +2266,7 @@ def get_latest_videos():
                 if channel_data:
                     result['channel_data'] = {
                         'followers': channel_data.get('followers'),
-                        'total_likes': channel_data.get('total_likes'),
-                        'videos_count': channel_data.get('videos_count')
+                        'total_likes': channel_data.get('total_likes')
                     }
                 
                 # Adicionar metadados e métricas do vídeo
@@ -2397,11 +2279,8 @@ def get_latest_videos():
                             'likes': video_details.get('likes'),
                             'comments': video_details.get('comments'),
                             'shares': video_details.get('shares')
-                        },
-                        'cdn_link': video_details.get('cdn_link')
+                        }
                     }
-                elif details_error:
-                    result['video_error'] = details_error
                 
                 results.append(result)
         
