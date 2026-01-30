@@ -1363,14 +1363,19 @@ def get_latest_video_url_from_channel(username):
     logger.warning("TikWM falhou, tentando Apify...")
     
     # Método 3: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
+    # Só tentar Apify se estiver disponível E tiver token configurado
     if APIFY_AVAILABLE:
-        logger.warning("Tentando Apify como último recurso...")
-        logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
-        result = get_latest_video_url_from_channel_apify(username)
-        if result[0] is not None:  # Se obteve sucesso
-            logger.info("✓ Sucesso com Apify TikTok Scraper (último recurso)")
-            return result
-        logger.warning("Apify também falhou.")
+        apify_token = os.getenv('APIFY_API_TOKEN', None)
+        if apify_token:
+            logger.warning("Tentando Apify como último recurso...")
+            logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
+            result = get_latest_video_url_from_channel_apify(username)
+            if result[0] is not None:  # Se obteve sucesso
+                logger.info("✓ Sucesso com Apify TikTok Scraper (último recurso)")
+                return result
+            logger.warning("Apify também falhou.")
+        else:
+            logger.info("Apify disponível mas APIFY_API_TOKEN não configurado. Pulando Apify.")
     
     # Se chegou aqui, todos os métodos falharam
     return None, None, None, "Todos os métodos falharam. Não foi possível obter o último vídeo do canal."
@@ -1936,13 +1941,18 @@ def download_tiktok_video(url):
             continue
     
     # ÚLTIMO RECURSO: Tentar Apify se todos os outros métodos falharam
+    # Só tentar Apify se estiver disponível E tiver token configurado
     if APIFY_AVAILABLE:
-        logger.warning("Todos os métodos do tiktok-downloader falharam, tentando Apify como último recurso...")
-        downloaded_file, error = download_tiktok_video_apify(url)
-        if downloaded_file:
-            return downloaded_file, None
-        if error:
-            last_error = f"Apify também falhou: {error}"
+        apify_token = os.getenv('APIFY_API_TOKEN', None)
+        if apify_token:
+            logger.warning("Todos os métodos do tiktok-downloader falharam, tentando Apify como último recurso...")
+            downloaded_file, error = download_tiktok_video_apify(url)
+            if downloaded_file:
+                return downloaded_file, None
+            if error:
+                last_error = f"Apify também falhou: {error}"
+        else:
+            logger.info("Apify disponível mas APIFY_API_TOKEN não configurado. Pulando Apify no download.")
     
     # Se nenhum serviço funcionou
     error_msg = f"Nenhum serviço conseguiu baixar o vídeo. Último erro: {last_error}" if last_error else "Nenhum serviço conseguiu baixar o vídeo"
