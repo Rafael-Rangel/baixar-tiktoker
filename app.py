@@ -1401,41 +1401,30 @@ def get_latest_video_url_from_channel_playwright(username):
         return None, None, None, error_msg
 
 def get_latest_video_url_from_channel(username):
-    """Extrai a URL do vídeo mais recente e dados do canal
+    """Extrai a URL do vídeo mais recente e dados do canal usando Apify
     
-    Tenta múltiplas alternativas na seguinte ordem:
-    1. TikWM API (API pública)
-    2. Apify TikTok Scraper (ÚLTIMO - API profissional, resolve Cloudflare automaticamente)
+    Usa apenas Apify TikTok Scraper (API profissional, resolve Cloudflare automaticamente)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
-    logger.info(f"Tentando obter último vídeo de @{username}...")
+    logger.info(f"Tentando obter último vídeo de @{username} usando Apify...")
     
-    # Método 1: Tentar TikWM API primeiro
-    result = get_latest_video_url_from_channel_tikwm(username)
+    # Usar apenas Apify
+    if not APIFY_AVAILABLE:
+        return None, None, None, "Apify Client não está instalado. Execute: pip install apify-client"
+    
+    apify_token = os.getenv('APIFY_API_TOKEN', None)
+    if not apify_token:
+        return None, None, None, "APIFY_API_TOKEN não configurado. Configure a variável de ambiente com sua chave do Apify"
+    
+    logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
+    result = get_latest_video_url_from_channel_apify(username)
     if result[0] is not None:  # Se obteve sucesso
-        logger.info("✓ Sucesso com TikWM API")
+        logger.info("✓ Sucesso com Apify TikTok Scraper")
         return result
     
-    logger.warning("TikWM falhou, tentando Apify...")
-    
-    # Método 2: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
-    # Só tentar Apify se estiver disponível E tiver token configurado
-    if APIFY_AVAILABLE:
-        apify_token = os.getenv('APIFY_API_TOKEN', None)
-        if apify_token:
-            logger.warning("Tentando Apify como último recurso...")
-            logger.info("Tentando método Apify TikTok Scraper (API profissional)...")
-            result = get_latest_video_url_from_channel_apify(username)
-            if result[0] is not None:  # Se obteve sucesso
-                logger.info("✓ Sucesso com Apify TikTok Scraper (último recurso)")
-                return result
-            logger.warning("Apify também falhou.")
-        else:
-            logger.info("Apify disponível mas APIFY_API_TOKEN não configurado. Pulando Apify.")
-    
-    # Se chegou aqui, todos os métodos falharam
-    return None, None, None, "Todos os métodos falharam. Não foi possível obter o último vídeo do canal."
+    logger.warning("Apify falhou.")
+    return None, None, None, "Apify falhou. Não foi possível obter o último vídeo do canal."
 
 def get_video_details_from_urlebird(urlebird_video_url):
     """Extrai metadados, métricas e link de download (CDN) do vídeo no Urlebird
