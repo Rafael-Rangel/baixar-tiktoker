@@ -1377,23 +1377,14 @@ def get_latest_video_url_from_channel(username):
     """Extrai a URL do vídeo mais recente e dados do canal
     
     Tenta múltiplas alternativas na seguinte ordem:
-    1. RapidAPI TikTok Scraper (API profissional)
-    2. TikWM API (API pública)
-    3. Apify TikTok Scraper (ÚLTIMO - API profissional, resolve Cloudflare automaticamente)
+    1. TikWM API (API pública)
+    2. Apify TikTok Scraper (ÚLTIMO - API profissional, resolve Cloudflare automaticamente)
     
     Retorna: (tiktok_url, service_video_url, channel_data, error)
     """
     logger.info(f"Tentando obter último vídeo de @{username}...")
     
-    # Método 1: Tentar RapidAPI TikTok Scraper primeiro
-    result = get_latest_video_url_from_channel_rapidapi(username)
-    if result[0] is not None:  # Se obteve sucesso
-        logger.info("✓ Sucesso com RapidAPI TikTok Scraper")
-        return result
-    
-    logger.warning("RapidAPI falhou, tentando TikWM...")
-    
-    # Método 2: Tentar TikWM API
+    # Método 1: Tentar TikWM API primeiro
     result = get_latest_video_url_from_channel_tikwm(username)
     if result[0] is not None:  # Se obteve sucesso
         logger.info("✓ Sucesso com TikWM API")
@@ -1401,7 +1392,7 @@ def get_latest_video_url_from_channel(username):
     
     logger.warning("TikWM falhou, tentando Apify...")
     
-    # Método 3: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
+    # Método 2: ÚLTIMO RECURSO - Tentar Apify TikTok Scraper (mais confiável, mas deixado por último)
     # Só tentar Apify se estiver disponível E tiver token configurado
     if APIFY_AVAILABLE:
         apify_token = os.getenv('APIFY_API_TOKEN', None)
