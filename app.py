@@ -608,6 +608,45 @@ def get_latest_video_url_from_channel_apify(username):
             'signature': author_meta.get("signature", "")
         }
         
+        # Extrair metadados do vídeo do Apify
+        video_meta = latest_video.get("videoMeta", {})
+        stats = latest_video.get("stats", {})
+        
+        # Formatar números grandes (ex: 1000000 -> "1M")
+        def format_number(num):
+            if num is None:
+                return None
+            try:
+                num = int(num)
+                if num >= 1_000_000_000:
+                    return f"{num / 1_000_000_000:.1f}B"
+                elif num >= 1_000_000:
+                    return f"{num / 1_000_000:.1f}M"
+                elif num >= 1_000:
+                    return f"{num / 1_000:.1f}K"
+                return str(num)
+            except:
+                return str(num) if num else None
+        
+        # Criar objeto de metadados do vídeo (formato compatível com Urlebird)
+        play_count = stats.get("playCount") or stats.get("playCount") or latest_video.get("playCount")
+        digg_count = stats.get("diggCount") or stats.get("likeCount") or latest_video.get("diggCount")
+        comment_count = stats.get("commentCount") or latest_video.get("commentCount")
+        share_count = stats.get("shareCount") or latest_video.get("shareCount")
+        
+        video_details_apify = {
+            'caption': latest_video.get("text") or latest_video.get("desc") or latest_video.get("description") or None,
+            'posted_time': latest_video.get("createTimeISO") or latest_video.get("createTime") or None,
+            'views': format_number(play_count),
+            'likes': format_number(digg_count),
+            'comments': format_number(comment_count),
+            'shares': format_number(share_count),
+            'cdn_link': latest_video.get("videoUrl") or latest_video.get("downloadAddr") or latest_video.get("videoMeta", {}).get("videoUrl") or None
+        }
+        
+        # Adicionar metadados do vídeo ao channel_data para retornar junto
+        channel_data['_video_details_apify'] = video_details_apify
+        
         logger.info(f"✓ Vídeo mais recente encontrado via Apify: {web_video_url}")
         return web_video_url, web_video_url, channel_data, None
         
@@ -2235,7 +2274,7 @@ def get_latest_videos():
                 
                 logger.info(f"Buscando último vídeo de @{username}...")
                 
-                # Buscar URL do vídeo mais recente e dados do canal usando Urlebird
+                # Buscar URL do vídeo mais recente e dados do canal
                 tiktok_url, urlebird_video_url, channel_data, error = get_latest_video_url_from_channel(username)
                 
                 if error or not tiktok_url:
@@ -2246,8 +2285,22 @@ def get_latest_videos():
                     })
                     continue
                 
-                # Extrair metadados e métricas completas do vídeo
-                video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
+                # Verificar se veio do Apify (tem metadados do vídeo no channel_data)
+                video_details = None
+                details_error = None
+                
+                if channel_data and '_video_details_apify' in channel_data:
+                    # Usar metadados do Apify diretamente
+                    video_details = channel_data.pop('_video_details_apify')
+                    logger.info("Usando metadados do vídeo do Apify")
+                else:
+                    # Tentar extrair metadados do Urlebird (só se for URL do Urlebird)
+                    if urlebird_video_url and 'urlebird.com' in urlebird_video_url:
+                        video_details, details_error = get_video_details_from_urlebird(urlebird_video_url)
+                    else:
+                        # Se não for URL do Urlebird, não tenta extrair metadados
+                        logger.info("URL não é do Urlebird, pulando extração de metadados")
+                        details_error = "Metadados não disponíveis (método usado não fornece metadados detalhados)"
                 
                 # Montar resultado completo
                 result = {
