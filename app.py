@@ -592,12 +592,16 @@ def get_latest_video_url_from_channel_apify(username):
         latest_video = items[0]
         
         # Log para debug: ver o que está vindo do Apify
-        logger.debug(f"Dados completos do Apify (primeiros 1000 chars): {json.dumps(latest_video, indent=2, ensure_ascii=False)[:1000]}")
-        logger.info(f"Campos disponíveis no objeto do Apify: {list(latest_video.keys())[:20]}")
+        logger.info(f"Total de itens retornados pelo Apify: {len(items)}")
+        logger.info(f"Campos disponíveis no objeto do Apify: {sorted(list(latest_video.keys()))}")
+        
+        # Log dos valores principais para debug
+        logger.info(f"Valores principais - text: {latest_video.get('text')}, playCount: {latest_video.get('playCount')}, diggCount: {latest_video.get('diggCount')}, createTimeISO: {latest_video.get('createTimeISO')}")
         
         # Extrair URL do vídeo
         web_video_url = latest_video.get("webVideoUrl") or latest_video.get("submittedVideoUrl")
         if not web_video_url:
+            logger.error(f"URL do vídeo não encontrada. Campos disponíveis: {list(latest_video.keys())}")
             return None, None, None, "URL do vídeo não encontrada na resposta do Apify"
         
         # Extrair dados do canal do authorMeta
@@ -676,7 +680,14 @@ def get_latest_video_url_from_channel_apify(username):
             'cdn_link': cdn_link
         }
         
-        logger.info(f"Metadados extraídos do Apify: caption={'✓' if caption else '✗'}, views={play_count}, likes={digg_count}, comments={comment_count}, shares={share_count}, cdn_link={'✓' if cdn_link else '✗'}")
+        logger.info(f"Metadados extraídos do Apify:")
+        logger.info(f"  - caption: {caption[:50] if caption else 'None'}...")
+        logger.info(f"  - posted_time: {posted_time}")
+        logger.info(f"  - views: {play_count} ({format_number(play_count) if play_count else 'None'})")
+        logger.info(f"  - likes: {digg_count} ({format_number(digg_count) if digg_count else 'None'})")
+        logger.info(f"  - comments: {comment_count} ({format_number(comment_count) if comment_count else 'None'})")
+        logger.info(f"  - shares: {share_count} ({format_number(share_count) if share_count else 'None'})")
+        logger.info(f"  - cdn_link: {'✓' if cdn_link else '✗'}")
         
         # Adicionar metadados do vídeo ao channel_data para retornar junto
         channel_data['_video_details_apify'] = video_details_apify
