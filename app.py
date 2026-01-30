@@ -605,27 +605,37 @@ def get_latest_video_url_from_channel_apify(username):
         logger.info(f"Valores principais do Apify - text: {latest_video.get('text')}, playCount: {latest_video.get('playCount')}, diggCount: {latest_video.get('diggCount')}, commentCount: {latest_video.get('commentCount')}, shareCount: {latest_video.get('shareCount')}, createTimeISO: {latest_video.get('createTimeISO')}")
         
         # Extrair dados do canal do authorMeta
-        # O Apify pode retornar campos achatados (authorMeta.name) ou objetos aninhados (authorMeta: {name: ...})
-        author_meta = latest_video.get("authorMeta", {})
+        # O Apify retorna campos ACHATADOS como "authorMeta.name", "authorMeta.fans", etc.
+        # Não objetos aninhados!
+        author_meta_dict = {}
         
-        # Se authorMeta for string vazia ou None, tentar campos achatados
-        if not author_meta or (isinstance(author_meta, dict) and len(author_meta) == 0):
-            # Tentar campos achatados como "authorMeta.name", "authorMeta.fans", etc.
-            author_meta = {}
-            for key in latest_video.keys():
-                if key.startswith("authorMeta."):
-                    field_name = key.replace("authorMeta.", "")
-                    author_meta[field_name] = latest_video[key]
+        # Construir dicionário authorMeta a partir de campos achatados
+        for key in latest_video.keys():
+            if key.startswith("authorMeta."):
+                field_name = key.replace("authorMeta.", "")
+                author_meta_dict[field_name] = latest_video[key]
+        
+        # Se não encontrou campos achatados, tentar objeto aninhado
+        if not author_meta_dict:
+            author_meta_obj = latest_video.get("authorMeta", {})
+            if isinstance(author_meta_obj, dict):
+                author_meta_dict = author_meta_obj
         
         channel_data = {
             'username': username,
-            'followers': author_meta.get("fans") if isinstance(author_meta, dict) else latest_video.get("authorMeta.fans", "N/A"),
-            'total_likes': author_meta.get("heart") if isinstance(author_meta, dict) else latest_video.get("authorMeta.heart", "N/A"),
-            'videos_posted': author_meta.get("video") if isinstance(author_meta, dict) else latest_video.get("authorMeta.video", "N/A"),
-            'nickname': author_meta.get("nickName") or author_meta.get("name") if isinstance(author_meta, dict) else latest_video.get("authorMeta.nickName") or latest_video.get("authorMeta.name", "N/A"),
-            'verified': author_meta.get("verified", False) if isinstance(author_meta, dict) else latest_video.get("authorMeta.verified", False),
-            'signature': author_meta.get("signature", "") if isinstance(author_meta, dict) else latest_video.get("authorMeta.signature", "")
+            'followers': author_meta_dict.get("fans") or latest_video.get("authorMeta.fans", "N/A"),
+            'total_likes': author_meta_dict.get("heart") or latest_video.get("authorMeta.heart", "N/A"),
+            'videos_posted': author_meta_dict.get("video") or latest_video.get("authorMeta.video", "N/A"),
+            'nickname': author_meta_dict.get("nickName") or author_meta_dict.get("name") or latest_video.get("authorMeta.nickName") or latest_video.get("authorMeta.name", "N/A"),
+            'verified': author_meta_dict.get("verified") if author_meta_dict.get("verified") is not None else latest_video.get("authorMeta.verified", False),
+            'signature': author_meta_dict.get("signature") or latest_video.get("authorMeta.signature", "")
         }
+        
+        logger.info(f"=== DEBUG CHANNEL DATA ===")
+        logger.info(f"followers: {channel_data.get('followers')}")
+        logger.info(f"total_likes: {channel_data.get('total_likes')}")
+        logger.info(f"nickname: {channel_data.get('nickname')}")
+        logger.info(f"==========================")
         
         # Extrair metadados do vídeo do Apify (baseado na documentação oficial)
         # Campos estão DIRETAMENTE no objeto latest_video, não dentro de stats
@@ -645,23 +655,30 @@ def get_latest_video_url_from_channel_apify(username):
             except:
                 return str(num) if num else None
         
-        # Extrair campos conforme documentação do Apify
-        # Os campos podem vir com ponto (videoMeta.duration) ou direto (text)
+        # Extrair campos conforme exemplo do usuário
+        # Campos estão DIRETAMENTE no objeto latest_video (achatados)
         # text = caption/descrição do vídeo (campo direto)
         caption = latest_video.get("text") or latest_video.get("desc") or None
         
         # createTimeISO = data de postagem formatada (campo direto)
         posted_time = latest_video.get("createTimeISO") or latest_video.get("createTime") or None
         
-        # Métricas estão DIRETAMENTE no objeto latest_video (não dentro de stats)
-        # Conforme documentação e exemplo do usuário: playCount, diggCount, commentCount, shareCount são campos diretos
+        # Métricas estão DIRETAMENTE no objeto latest_video
+        # Conforme exemplo: playCount, diggCount, commentCount, shareCount são campos diretos
         play_count = latest_video.get("playCount")
         digg_count = latest_video.get("diggCount")  # likes
         comment_count = latest_video.get("commentCount")
         share_count = latest_video.get("shareCount")
         
         # Log dos valores brutos antes da formatação
-        logger.info(f"Valores brutos do Apify - text: '{caption}', playCount: {play_count}, diggCount: {digg_count}, commentCount: {comment_count}, shareCount: {share_count}, createTimeISO: {posted_time}")
+        logger.info(f"=== DEBUG VIDEO METADATA (BRUTOS) ===")
+        logger.info(f"text (caption): '{caption}'")
+        logger.info(f"playCount (views): {play_count}")
+        logger.info(f"diggCount (likes): {digg_count}")
+        logger.info(f"commentCount: {comment_count}")
+        logger.info(f"shareCount: {share_count}")
+        logger.info(f"createTimeISO (posted_time): {posted_time}")
+        logger.info(f"=====================================")
         
         # Log detalhado dos valores extraídos
         logger.info(f"Valores extraídos do Apify:")
