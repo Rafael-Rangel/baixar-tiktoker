@@ -608,12 +608,10 @@ def get_latest_video_url_from_channel_apify(username):
             'signature': author_meta.get("signature", "")
         }
         
-        # Extrair metadados do vídeo do Apify
-        video_meta = latest_video.get("videoMeta", {})
-        stats = latest_video.get("stats", {})
-        
-        # Formatar números grandes (ex: 1000000 -> "1M")
+        # Extrair metadados do vídeo do Apify (baseado na documentação oficial)
+        # Campos estão DIRETAMENTE no objeto latest_video, não dentro de stats
         def format_number(num):
+            """Formata números grandes (ex: 1000000 -> "1M")"""
             if num is None:
                 return None
             try:
@@ -628,21 +626,50 @@ def get_latest_video_url_from_channel_apify(username):
             except:
                 return str(num) if num else None
         
-        # Criar objeto de metadados do vídeo (formato compatível com Urlebird)
-        play_count = stats.get("playCount") or stats.get("playCount") or latest_video.get("playCount")
-        digg_count = stats.get("diggCount") or stats.get("likeCount") or latest_video.get("diggCount")
-        comment_count = stats.get("commentCount") or latest_video.get("commentCount")
-        share_count = stats.get("shareCount") or latest_video.get("shareCount")
+        # Extrair campos conforme documentação do Apify
+        # text = caption/descrição do vídeo (campo direto)
+        caption = latest_video.get("text") or None
         
+        # createTimeISO = data de postagem formatada (campo direto)
+        posted_time = latest_video.get("createTimeISO") or None
+        
+        # Métricas estão DIRETAMENTE no objeto latest_video (não dentro de stats)
+        # Conforme documentação: playCount, diggCount, commentCount, shareCount são campos diretos
+        play_count = latest_video.get("playCount")
+        digg_count = latest_video.get("diggCount")  # likes
+        comment_count = latest_video.get("commentCount")
+        share_count = latest_video.get("shareCount")
+        
+        # CDN link - pode estar em videoMeta.videoUrl ou mediaUrls
+        video_meta = latest_video.get("videoMeta", {})
+        media_urls = latest_video.get("mediaUrls", [])
+        
+        # Tentar obter URL do vídeo de várias fontes
+        cdn_link = None
+        if media_urls and len(media_urls) > 0:
+            # Se tiver mediaUrls (quando shouldDownloadVideos=true), usar o primeiro
+            cdn_link = media_urls[0] if isinstance(media_urls[0], str) else media_urls[0].get("url") if isinstance(media_urls[0], dict) else None
+        else:
+            # Tentar outros campos possíveis
+            cdn_link = (
+                latest_video.get("videoUrl") or 
+                latest_video.get("downloadAddr") or 
+                video_meta.get("videoUrl") or
+                None
+            )
+        
+        # Criar objeto de metadados do vídeo (formato compatível com Urlebird)
         video_details_apify = {
-            'caption': latest_video.get("text") or latest_video.get("desc") or latest_video.get("description") or None,
-            'posted_time': latest_video.get("createTimeISO") or latest_video.get("createTime") or None,
+            'caption': caption,
+            'posted_time': posted_time,
             'views': format_number(play_count),
             'likes': format_number(digg_count),
             'comments': format_number(comment_count),
             'shares': format_number(share_count),
-            'cdn_link': latest_video.get("videoUrl") or latest_video.get("downloadAddr") or latest_video.get("videoMeta", {}).get("videoUrl") or None
+            'cdn_link': cdn_link
         }
+        
+        logger.info(f"Metadados extraídos do Apify: caption={'✓' if caption else '✗'}, views={play_count}, likes={digg_count}, comments={comment_count}, shares={share_count}, cdn_link={'✓' if cdn_link else '✗'}")
         
         # Adicionar metadados do vídeo ao channel_data para retornar junto
         channel_data['_video_details_apify'] = video_details_apify
