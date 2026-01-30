@@ -12,6 +12,7 @@ services:
       - ./downloads:/app/downloads
     environment:
       - PORT=5000
+      - APIFY_API_TOKEN=${APIFY_API_TOKEN:-apify_api_WyDVddVydudhKKNW35gtmXzokwpcHB2nynjA}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
