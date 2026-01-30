@@ -595,25 +595,36 @@ def get_latest_video_url_from_channel_apify(username):
         logger.info(f"Total de itens retornados pelo Apify: {len(items)}")
         logger.info(f"Campos disponíveis no objeto do Apify: {sorted(list(latest_video.keys()))}")
         
-        # Log dos valores principais para debug
-        logger.info(f"Valores principais - text: {latest_video.get('text')}, playCount: {latest_video.get('playCount')}, diggCount: {latest_video.get('diggCount')}, createTimeISO: {latest_video.get('createTimeISO')}")
-        
         # Extrair URL do vídeo
         web_video_url = latest_video.get("webVideoUrl") or latest_video.get("submittedVideoUrl")
         if not web_video_url:
             logger.error(f"URL do vídeo não encontrada. Campos disponíveis: {list(latest_video.keys())}")
             return None, None, None, "URL do vídeo não encontrada na resposta do Apify"
         
+        # Log dos valores principais para debug (após confirmar que tem URL)
+        logger.info(f"Valores principais do Apify - text: {latest_video.get('text')}, playCount: {latest_video.get('playCount')}, diggCount: {latest_video.get('diggCount')}, commentCount: {latest_video.get('commentCount')}, shareCount: {latest_video.get('shareCount')}, createTimeISO: {latest_video.get('createTimeISO')}")
+        
         # Extrair dados do canal do authorMeta
+        # O Apify pode retornar campos achatados (authorMeta.name) ou objetos aninhados (authorMeta: {name: ...})
         author_meta = latest_video.get("authorMeta", {})
+        
+        # Se authorMeta for string vazia ou None, tentar campos achatados
+        if not author_meta or (isinstance(author_meta, dict) and len(author_meta) == 0):
+            # Tentar campos achatados como "authorMeta.name", "authorMeta.fans", etc.
+            author_meta = {}
+            for key in latest_video.keys():
+                if key.startswith("authorMeta."):
+                    field_name = key.replace("authorMeta.", "")
+                    author_meta[field_name] = latest_video[key]
+        
         channel_data = {
             'username': username,
-            'followers': author_meta.get("fans", "N/A"),
-            'total_likes': author_meta.get("heart", "N/A"),
-            'videos_posted': author_meta.get("video", "N/A"),
-            'nickname': author_meta.get("nickName", "N/A"),
-            'verified': author_meta.get("verified", False),
-            'signature': author_meta.get("signature", "")
+            'followers': author_meta.get("fans") if isinstance(author_meta, dict) else latest_video.get("authorMeta.fans", "N/A"),
+            'total_likes': author_meta.get("heart") if isinstance(author_meta, dict) else latest_video.get("authorMeta.heart", "N/A"),
+            'videos_posted': author_meta.get("video") if isinstance(author_meta, dict) else latest_video.get("authorMeta.video", "N/A"),
+            'nickname': author_meta.get("nickName") or author_meta.get("name") if isinstance(author_meta, dict) else latest_video.get("authorMeta.nickName") or latest_video.get("authorMeta.name", "N/A"),
+            'verified': author_meta.get("verified", False) if isinstance(author_meta, dict) else latest_video.get("authorMeta.verified", False),
+            'signature': author_meta.get("signature", "") if isinstance(author_meta, dict) else latest_video.get("authorMeta.signature", "")
         }
         
         # Extrair metadados do vídeo do Apify (baseado na documentação oficial)
@@ -635,6 +646,7 @@ def get_latest_video_url_from_channel_apify(username):
                 return str(num) if num else None
         
         # Extrair campos conforme documentação do Apify
+        # Os campos podem vir com ponto (videoMeta.duration) ou direto (text)
         # text = caption/descrição do vídeo (campo direto)
         caption = latest_video.get("text") or latest_video.get("desc") or None
         
@@ -642,18 +654,33 @@ def get_latest_video_url_from_channel_apify(username):
         posted_time = latest_video.get("createTimeISO") or latest_video.get("createTime") or None
         
         # Métricas estão DIRETAMENTE no objeto latest_video (não dentro de stats)
-        # Conforme documentação: playCount, diggCount, commentCount, shareCount são campos diretos
+        # Conforme documentação e exemplo do usuário: playCount, diggCount, commentCount, shareCount são campos diretos
         play_count = latest_video.get("playCount")
         digg_count = latest_video.get("diggCount")  # likes
         comment_count = latest_video.get("commentCount")
         share_count = latest_video.get("shareCount")
         
-        # Log para debug dos valores extraídos
-        logger.debug(f"Valores extraídos - caption: {caption is not None}, playCount: {play_count}, diggCount: {digg_count}, commentCount: {comment_count}, shareCount: {share_count}, createTimeISO: {posted_time}")
+        # Log dos valores brutos antes da formatação
+        logger.info(f"Valores brutos do Apify - text: '{caption}', playCount: {play_count}, diggCount: {digg_count}, commentCount: {comment_count}, shareCount: {share_count}, createTimeISO: {posted_time}")
+        
+        # Log detalhado dos valores extraídos
+        logger.info(f"Valores extraídos do Apify:")
+        logger.info(f"  - caption (text): {caption[:50] if caption else 'None'}...")
+        logger.info(f"  - posted_time (createTimeISO): {posted_time}")
+        logger.info(f"  - playCount (views): {play_count}")
+        logger.info(f"  - diggCount (likes): {digg_count}")
+        logger.info(f"  - commentCount: {comment_count}")
+        logger.info(f"  - shareCount: {share_count}")
         
         # CDN link - pode estar em videoMeta.videoUrl ou mediaUrls
+        # O Apify pode retornar campos achatados (videoMeta.duration) ou objetos aninhados
         video_meta = latest_video.get("videoMeta", {})
         media_urls = latest_video.get("mediaUrls", [])
+        
+        # Se videoMeta for vazio, tentar campos achatados
+        if not video_meta or (isinstance(video_meta, dict) and len(video_meta) == 0):
+            # Não há campos achatados para videoMeta no exemplo, mas vamos tentar
+            pass
         
         # Tentar obter URL do vídeo de várias fontes
         cdn_link = None
@@ -665,7 +692,7 @@ def get_latest_video_url_from_channel_apify(username):
             cdn_link = (
                 latest_video.get("videoUrl") or 
                 latest_video.get("downloadAddr") or 
-                video_meta.get("videoUrl") or
+                (video_meta.get("videoUrl") if isinstance(video_meta, dict) else None) or
                 None
             )
         
